@@ -5,9 +5,9 @@
 
 Hacker News RSS feeds whose items carry the linked page's image and excerpt, next to the article and comments links. [hnrss](https://github.com/hnrss/hnrss) gives you only the links. This repo builds the feeds with a scheduled GitHub Actions workflow and publishes them as static files on GitHub Pages.
 
-**Subscribe:** <https://feeds.michelebologna.net/hackernews-rss/>
+**Subscribe:** <https://hackernews-rss.michelebologna.net/>
 
-The feeds are published on GitHub Pages and served at `feeds.michelebologna.net`, a proxy in front of every feed I publish, so the URLs above keep working wherever the files are hosted. The `mbologna.github.io/hackernews-rss/` URLs work too.
+The feeds are published on GitHub Pages and served at `hackernews-rss.michelebologna.net` by a Cloudflare Worker, so the URLs above keep working wherever the files are hosted. `https://hackernews-rss.michelebologna.net/healthz` answers 200 `{"status":"ok",…}`, or 503 when the last build is over 3 hours old or a feed's items mostly lack an image.
 
 | Feed | URL |
 | --- | --- |
@@ -55,7 +55,7 @@ An item's `pubDate` is when that feed first listed the story, not when it was po
 The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pull request. On `main` it then builds the feeds and deploys them to GitHub Pages:
 
 - on every push;
-- every 30 minutes (at :07 and :37), dispatched by a Cron Trigger on the feeds.michelebologna.net Worker: GitHub's own schedule ran hours late, or not at all. Those runs skip the tests;
+- every 30 minutes (at :07 and :37), dispatched by a Cron Trigger on the Worker that serves the feeds: GitHub's own schedule ran hours late, or not at all. Those runs skip the tests;
 - on a manual run.
 
 A build:
