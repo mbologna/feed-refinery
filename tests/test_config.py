@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from hackernews_rss.config import ConfigError, Digest, Feed, Rss, load, parse
+from feeds.config import ConfigError, Digest, Feed, Rss, load, parse
 
 REPO_CONFIG = Path(__file__).parent.parent / "feeds.toml"
 

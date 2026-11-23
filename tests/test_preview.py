@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 from conftest import FakeResponse
 
-from hackernews_rss.preview import MAX_BYTES, Preview, fetch_preview, parse_preview
-from hackernews_rss.text import excerpt
+from feeds.preview import MAX_BYTES, Preview, fetch_preview, parse_preview
+from feeds.text import excerpt
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

@@ -100,7 +100,7 @@ def _channel(
     ET.SubElement(channel, "description").text = description
     ET.SubElement(channel, f"{{{ATOM}}}link", {"href": feed_url, "rel": "self", "type": "application/rss+xml"})
     ET.SubElement(channel, "lastBuildDate").text = format_datetime(now)
-    ET.SubElement(channel, "generator").text = "hackernews-rss"
+    ET.SubElement(channel, "generator").text = "feeds"
     ET.SubElement(channel, "ttl").text = "30"
     image = ET.SubElement(channel, "image")
     ET.SubElement(image, "url").text = page_url.rstrip("/") + "/" + ICON

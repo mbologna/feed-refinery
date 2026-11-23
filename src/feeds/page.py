@@ -62,7 +62,7 @@ def render_page(feeds: list[tuple[Feed | Digest | Rss, str]]) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hacker News RSS</title>
+  <title>Feeds</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.png">
   <style>
@@ -72,9 +72,9 @@ def render_page(feeds: list[tuple[Feed | Digest | Rss, str]]) -> str:
   </style>
 </head>
 <body>
-  <h1>Hacker News RSS</h1>
-  <p>Hacker News feeds whose items carry the linked page's image and excerpt, plus the article and comments links.
-  Rebuilt every 30 minutes. Source: <a href="https://github.com/mbologna/hackernews-rss">mbologna/hackernews-rss</a>.</p>
+  <h1>Feeds</h1>
+  <p>Hacker News feeds, and other sites' feeds filtered and merged, whose items carry each article's image and excerpt.
+  Rebuilt every 30 minutes. Source: <a href="https://github.com/mbologna/feeds">mbologna/feeds</a>.</p>
   <ul>
 {rows}
   </ul>

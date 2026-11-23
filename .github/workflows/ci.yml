@@ -85,7 +85,7 @@ jobs:
           python-version: "3.15"
 
       - name: Build
-        run: uv run --locked --no-dev hackernews-rss build --output-dir public
+        run: uv run --locked --no-dev feeds build --output-dir public
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
@@ -128,4 +128,4 @@ jobs:
           python-version: "3.15"
 
       - name: Fail if a published feed is missing or older than 3 hours
-        run: uv run --locked --no-dev hackernews-rss check --max-age-hours 3
+        run: uv run --locked --no-dev feeds check --max-age-hours 3

@@ -6,8 +6,8 @@ from pathlib import Path
 
 from conftest import FakeResponse, hit
 
-from hackernews_rss import cli
-from hackernews_rss.source import API, FIREBASE
+from feeds import cli
+from feeds.source import API, FIREBASE
 
 PAGE = "https://site.example/"
 CONFIG = """

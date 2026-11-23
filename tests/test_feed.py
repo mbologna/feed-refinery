@@ -4,9 +4,9 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from hackernews_rss.comments import Comment
-from hackernews_rss.config import Digest, Feed, Rss
-from hackernews_rss.feed import (
+from feeds.comments import Comment
+from feeds.config import Digest, Feed, Rss
+from feeds.feed import (
     ATOM,
     DC,
     MEDIA,
@@ -20,11 +20,11 @@ from hackernews_rss.feed import (
     render_rss_feed,
     rss_item_html,
 )
-from hackernews_rss.page import describe, render_page
-from hackernews_rss.preview import Preview
-from hackernews_rss.rss import Item
-from hackernews_rss.source import Story
-from hackernews_rss.state import Entry, RssEntry
+from feeds.page import describe, render_page
+from feeds.preview import Preview
+from feeds.rss import Item
+from feeds.source import Story
+from feeds.state import Entry, RssEntry
 
 NOW = dt.datetime(2026, 11, 19, 12, 0, tzinfo=dt.UTC)
 FEED = Feed("frontpage.xml", "Hacker News: front page", "front_page")

@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from hackernews_rss import USER_AGENT, rss
-from hackernews_rss.config import Rss
-from hackernews_rss.rss import Fetched, Item, canonical_link, dedup_key, fetch, keep, normal_title, parse
+from feeds import USER_AGENT, rss
+from feeds.config import Rss
+from feeds.rss import Fetched, Item, canonical_link, dedup_key, fetch, keep, normal_title, parse
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NEWS_SAMPLE = (FIXTURES / "newssite.xml").read_bytes()

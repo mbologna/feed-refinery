@@ -4,12 +4,12 @@ import urllib.error
 import pytest
 from conftest import FakeResponse
 
-from hackernews_rss.comments import Comment
-from hackernews_rss.config import Digest, Feed, Rss
-from hackernews_rss.preview import Preview
-from hackernews_rss.rss import Fetched, Item
-from hackernews_rss.source import Story
-from hackernews_rss.state import (
+from feeds.comments import Comment
+from feeds.config import Digest, Feed, Rss
+from feeds.preview import Preview
+from feeds.rss import Fetched, Item
+from feeds.source import Story
+from feeds.state import (
     COMMENT_INTERVAL,
     MAX_ATTEMPTS,
     RSS_KEEP,

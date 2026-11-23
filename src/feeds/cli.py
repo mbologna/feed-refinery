@@ -159,7 +159,7 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
     (output_dir / HEALTH_NAME).write_text(json.dumps(health, indent=2) + "\n", encoding="utf-8")
     (output_dir / STATE_NAME).write_bytes(current.to_json())
     # The icons: the feeds' <image> and the index page's favicon.
-    for asset in importlib.resources.files("hackernews_rss").joinpath("site").iterdir():
+    for asset in importlib.resources.files("feeds").joinpath("site").iterdir():
         (output_dir / asset.name).write_bytes(asset.read_bytes())
     published: list[config.Feed | config.Digest | config.Rss] = [*feeds, *conf.digests, *conf.rss]
     page = render_page([(f, feed_url(page_url, f.file)) for f in published])
@@ -190,7 +190,7 @@ def check(config_path: Path, page_url: str, max_age: dt.timedelta, now: dt.datet
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="hackernews-rss", description=__doc__)
+    parser = argparse.ArgumentParser(prog="feeds", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
     b = sub.add_parser("build", help="write the feeds, state.json and index.html")

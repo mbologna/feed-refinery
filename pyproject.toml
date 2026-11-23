@@ -1,10 +1,10 @@
 [project]
-name = "hackernews-rss"
+name = "feeds"
 # A placeholder, never bumped: a release is the git tag vX.Y.Z that
 # auto-release creates, with a GitHub Release of the commit subjects; it
 # builds nothing. Nothing reads this field at run time.
 version = "0.0.0"
-description = "Hacker News RSS feeds (front page, 100+ points, top stories, daily digest) whose items carry the linked page's image and excerpt and the top comment, built by GitHub Actions"
+description = "RSS feeds built by GitHub Actions: Hacker News (front page, 100+ points, top stories, daily digest) and any RSS or Atom feed, filtered, merged and enriched with each article's image and excerpt"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Michele Bologna" }]
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-hackernews-rss = "hackernews_rss.cli:main"
+feeds = "feeds.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.13,<0.14"]
@@ -73,8 +73,8 @@ addopts = "-v --strict-markers"
 exclude_dirs = ["tests"]
 
 [tool.coverage.run]
-source = ["hackernews_rss"]
-# `python -m hackernews_rss` only calls main().
+source = ["feeds"]
+# `python -m feeds` only calls main().
 omit = ["*/__main__.py"]
 
 [tool.coverage.report]
