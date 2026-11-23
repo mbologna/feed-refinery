@@ -11,16 +11,44 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from . import PAGE_URL, STATE_NAME, USER_AGENT, comments, config, preview, source, state
-from .feed import last_build_date, render_digest, render_feed
+from . import PAGE_URL, STATE_NAME, USER_AGENT, comments, config, preview, rss, source, state
+from .feed import last_build_date, render_digest, render_feed, render_rss_feed
 from .page import render_page
 
 HEALTH_NAME = "health.json"
 IMAGE_RATE_FLOOR = 0.3  # below this share of items with an image, something is blocking or broken
+RSS_MAX_AGE = 3 * 3600  # an RSS feed is not ok while one of its sources last answered longer ago than this
 
 
 def feed_url(page_url: str, file: str) -> str:
     return page_url.rstrip("/") + "/" + file
+
+
+def fetch_rss(feeds: list[config.Rss], current: state.State) -> dict[str, dict[str, rss.Fetched | Exception]]:
+    """Every RSS feed's sources, with conditional GETs. A source two feeds share is fetched once per validator pair."""
+    shared: dict[tuple[str, str | None, str | None], rss.Fetched | Exception] = {}
+    results: dict[str, dict[str, rss.Fetched | Exception]] = {}
+    for feed in feeds:
+        known = current.rss.get(feed.file) or state.RssFeed()
+        outcomes = results[feed.file] = {}
+        for url in feed.sources:
+            source_state = known.sources.get(url) or state.Source()
+            key = (url, source_state.etag, source_state.last_modified)
+            if key not in shared:
+                try:
+                    shared[key] = rss.fetch(url, source_state.etag, source_state.last_modified)
+                # Any error: the source keeps the items it had while the others refresh.
+                except Exception as e:
+                    shared[key] = e
+            outcome = outcomes[url] = shared[key]
+            if isinstance(outcome, Exception):
+                print(f"::warning::{feed.file}: {url}: {type(outcome).__name__}: {outcome}")
+            elif outcome.status == 304:
+                print(f"{feed.file}: {url}: unchanged")
+            else:
+                passed = sum(1 for item in outcome.items if rss.keep(item, feed))
+                print(f"{feed.file}: {url}: {len(outcome.items)} items, {passed} pass the filters")
+    return results
 
 
 def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now: dt.datetime) -> None:
@@ -75,9 +103,16 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
     print(f"top comments: looked up {fetched}, {len(failed)} failed")
     for url, error in failed:
         print(f"  {url}: {error}")
+    rss_results = fetch_rss(conf.rss, current)
+    state.update_rss(current, conf.rss, rss_results, stamp)
+    if conf.rss:
+        fetched, failed = state.fetch_rss_previews(current, conf.rss, preview.fetch_preview)
+        print(f"rss previews: fetched {fetched} new, {len(failed)} failed")
+        for url, error in failed:
+            print(f"  {url}: {error}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    health: dict = {"built": stamp, "feeds": {}, "digests": {}}
+    health: dict = {"built": stamp, "feeds": {}, "digests": {}, "rss": {}}
     for feed in feeds:
         seen = current.feeds[feed.file]
         items = [(current.stories[sid], t) for sid, t in seen.items()]
@@ -100,13 +135,33 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
         (output_dir / digest.file).write_bytes(document)
         print(f"{digest.file}: {len(entries)} days")
         health["digests"][digest.file] = {"days": len(entries)}
+    for rss_feed in conf.rss:
+        known = current.rss[rss_feed.file]
+        rss_entries = list(known.items.values())
+        document = render_rss_feed(rss_feed, rss_entries, feed_url(page_url, rss_feed.file), page_url, now)
+        (output_dir / rss_feed.file).write_bytes(document)
+        images = sum(1 for e in rss_entries if e.image)
+        excerpts = sum(1 for e in rss_entries if e.excerpt)
+        last_ok = known.last_ok(rss_feed)
+        failing = [url for url, outcome in rss_results[rss_feed.file].items() if isinstance(outcome, Exception)]
+        print(f"{rss_feed.file}: {len(rss_entries)} items, {images} with an image, {excerpts} with an excerpt")
+        health["rss"][rss_feed.file] = {
+            "items": len(rss_entries),
+            "images": images,
+            "excerpts": excerpts,
+            "ok": last_ok is not None and stamp - last_ok <= RSS_MAX_AGE,
+            "last_ok": last_ok,
+            "sources_failed": failing,
+        }
+        if rss_feed.enrich and len(rss_entries) >= 10 and images < IMAGE_RATE_FLOOR * len(rss_entries):
+            print(f"::warning::{rss_feed.file}: only {images} of {len(rss_entries)} items have an image")
     # For outside monitoring: when the build ran and how the feeds look.
     (output_dir / HEALTH_NAME).write_text(json.dumps(health, indent=2) + "\n", encoding="utf-8")
     (output_dir / STATE_NAME).write_bytes(current.to_json())
     # The icons: the feeds' <image> and the index page's favicon.
     for asset in importlib.resources.files("hackernews_rss").joinpath("site").iterdir():
         (output_dir / asset.name).write_bytes(asset.read_bytes())
-    published: list[config.Feed | config.Digest] = [*feeds, *conf.digests]
+    published: list[config.Feed | config.Digest | config.Rss] = [*feeds, *conf.digests, *conf.rss]
     page = render_page([(f, feed_url(page_url, f.file)) for f in published])
     (output_dir / "index.html").write_text(page, encoding="utf-8")
 

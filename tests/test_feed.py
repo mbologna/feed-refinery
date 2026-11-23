@@ -1,10 +1,11 @@
 import datetime as dt
+import re
 import xml.etree.ElementTree as ET
 
 import pytest
 
 from hackernews_rss.comments import Comment
-from hackernews_rss.config import Digest, Feed
+from hackernews_rss.config import Digest, Feed, Rss
 from hackernews_rss.feed import (
     ATOM,
     DC,
@@ -16,11 +17,14 @@ from hackernews_rss.feed import (
     last_build_date,
     render_digest,
     render_feed,
+    render_rss_feed,
+    rss_item_html,
 )
 from hackernews_rss.page import describe, render_page
 from hackernews_rss.preview import Preview
+from hackernews_rss.rss import Item
 from hackernews_rss.source import Story
-from hackernews_rss.state import Entry
+from hackernews_rss.state import Entry, RssEntry
 
 NOW = dt.datetime(2026, 11, 19, 12, 0, tzinfo=dt.UTC)
 FEED = Feed("frontpage.xml", "Hacker News: front page", "front_page")
@@ -232,3 +236,112 @@ def test_page_describes_a_digest():
     assert describe(Digest("d.xml", "D")) == (
         "the 20 stories with the most points of each UTC day, published at 06:00 UTC the next day, last 7 days"
     )
+
+
+NEWS_SAMPLE = Rss("newssite.xml", "News Site: articles", ("https://www.newssite.example/feed",))
+LINK = "https://www.newssite.example/2026/11/23/chiara-ferragni-pandorogate-documentario/"
+
+
+def rss_item(**kw):
+    base = {
+        "guid": LINK,
+        "link": LINK,
+        "title": "Cosa dice il film del “pandorogate” & <altro>",
+        "published": 1_795_460_484,
+        "categories": ("Cultura", "TV"),
+        "author": "Redazione",
+        "summary": "Non aveva mai parlato delle sue responsabilità",
+        "image": "https://static.example/chiara.png?w=680&h=453",
+    }
+    return Item(**{**base, **kw})
+
+
+def render_rss(entries, feed=NEWS_SAMPLE):
+    doc = render_rss_feed(feed, entries, "https://site.example/newssite.xml", "https://site.example/", NOW)
+    return doc, ET.fromstring(doc)
+
+
+def test_rss_items_keep_the_sources_fields():
+    doc, root = render_rss([RssEntry(rss_item(), 1_795_469_000)])
+    assert doc.startswith(b"<?xml version='1.0' encoding='utf-8'?>")
+    channel = root.find("channel")
+    assert channel.findtext("title") == "News Site: articles"
+    assert channel.findtext("description") == (
+        "News Site: articles, from https://www.newssite.example/feed, with each article's image and excerpt"
+    )
+    assert channel.find(f"{{{ATOM}}}link").get("href") == "https://site.example/newssite.xml"
+    item = channel.find("item")
+    assert item.findtext("title") == "Cosa dice il film del “pandorogate” & <altro>"
+    assert item.findtext("link") == LINK
+    guid = item.find("guid")
+    assert (guid.text, guid.get("isPermaLink")) == (LINK, "true")
+    assert item.findtext("pubDate") == "Mon, 23 Nov 2026 19:01:24 +0000"  # the source's date, not first seen
+    assert [c.text for c in item.findall("category")] == ["Cultura", "TV"]
+    assert item.findtext(f"{{{DC}}}creator") == "Redazione"
+    assert item.find(f"{{{MEDIA}}}content").get("url") == "https://static.example/chiara.png?w=680&h=453"
+    assert item.find(f"{{{MEDIA}}}thumbnail").get("url") == "https://static.example/chiara.png?w=680&h=453"
+    assert item.findtext("comments") is None
+
+
+def test_rss_item_html():
+    assert rss_item_html(RssEntry(rss_item(summary="Uno <b>due</b> & tre"), 0)) == (
+        '<p><img src="https://static.example/chiara.png?w=680&amp;h=453" alt=""></p>\n'
+        "<p>Uno &lt;b&gt;due&lt;/b&gt; &amp; tre</p>\n"
+        f'<p><a href="{LINK}">newssite.example</a></p>'
+    )
+
+
+def test_rss_items_fall_back_on_the_preview():
+    entry = RssEntry(
+        rss_item(summary="", image=None), 0, Preview("https://og.example/i.png", "From the page", "News Site")
+    )
+    html = rss_item_html(entry)
+    assert '<img src="https://og.example/i.png"' in html and "<p>From the page</p>" in html
+    # The source's own image and text come first.
+    entry = RssEntry(rss_item(), 0, Preview("https://og.example/i.png", "From the page"))
+    html = rss_item_html(entry)
+    assert "og.example" not in html and "From the page" not in html
+
+
+def test_rss_item_without_link_date_image_or_text():
+    entry = RssEntry(
+        rss_item(guid="tag:x,1", link=None, published=None, image=None, summary="", author=""), 1_795_001_000
+    )
+    _, root = render_rss([entry], Rss("n.xml", "N", ("https://a.example/", "https://b.example/"), enrich=False))
+    assert root.findtext("channel/description") == "N, from https://a.example/, https://b.example/"
+    item = root.find("channel/item")
+    assert item.find("link") is None
+    assert (item.findtext("guid"), item.find("guid").get("isPermaLink")) == ("tag:x,1", "false")
+    assert item.findtext("pubDate") == "Wed, 18 Nov 2026 11:23:20 +0000"  # when the feed first saw it
+    assert item.findtext("description") == ""
+    assert item.find(f"{{{MEDIA}}}content") is None and item.find(f"{{{DC}}}creator") is None
+
+
+def test_a_guid_that_isnt_the_link_is_not_a_permalink():
+    _, root = render_rss([RssEntry(rss_item(guid="https://www.newssite.example/?p=1"), 0)])
+    assert root.find("channel/item/guid").get("isPermaLink") == "false"
+
+
+def test_page_describes_rss_feeds():
+    filtered = Rss(
+        "newssite.xml",
+        "News Site",
+        ("https://www.newssite.example/feed",),
+        exclude_categories=frozenset({"bits", "peanuts"}),
+        exclude_titles=(re.compile("x"),),
+    )
+    assert describe(filtered) == "items from newssite.example, filtered by 3 rules, with images and excerpts, up to 100 items"
+    merged = Rss(
+        "n.xml",
+        "N",
+        ("https://www.newssite.example/feed", "https://www.newssite.example/mondo/feed", "https://example.org/rss"),
+        include_links=(re.compile("y"),),
+        enrich=False,
+        max_items=50,
+    )
+    assert (
+        describe(merged)
+        == "items from newssite.example, example.org (3 feeds, duplicates merged), filtered by 1 rule, up to 50 items"
+    )
+    page = render_page([(filtered, "https://site.example/newssite.xml")])
+    assert '<a href="https://site.example/newssite.xml">News Site</a>' in page

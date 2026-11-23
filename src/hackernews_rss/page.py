@@ -4,10 +4,33 @@ from __future__ import annotations
 
 from html import escape
 
-from .config import Digest, Feed
+from .config import Digest, Feed, Rss
+from .feed import domain, plural
+
+FILTERS = (
+    "include_categories",
+    "exclude_categories",
+    "exclude_authors",
+    "include_titles",
+    "exclude_titles",
+    "include_links",
+    "exclude_links",
+)
 
 
-def describe(feed: Feed | Digest) -> str:
+def describe(feed: Feed | Digest | Rss) -> str:
+    if isinstance(feed, Rss):
+        hosts = list(dict.fromkeys(domain(s) or s for s in feed.sources))
+        parts = [f"items from {', '.join(hosts)}"]
+        if len(feed.sources) > 1:
+            parts[0] += f" ({plural(len(feed.sources), 'feed')}, duplicates merged)"
+        rules = sum(len(getattr(feed, key)) for key in FILTERS)
+        if rules:
+            parts.append(f"filtered by {plural(rules, 'rule')}")
+        if feed.enrich:
+            parts.append("with images and excerpts")
+        parts.append(f"up to {feed.max_items} items")
+        return ", ".join(parts)
     if isinstance(feed, Digest):
         return (
             f"the {feed.top} stories with the most points of each UTC day, "
@@ -27,7 +50,7 @@ def describe(feed: Feed | Digest) -> str:
     return ", ".join(parts)
 
 
-def render_page(feeds: list[tuple[Feed | Digest, str]]) -> str:
+def render_page(feeds: list[tuple[Feed | Digest | Rss, str]]) -> str:
     """feeds pairs each feed with its published URL."""
     rows = "\n".join(
         f'    <li><a href="{escape(url)}">{escape(feed.title)}</a><br>'

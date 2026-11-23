@@ -1,4 +1,4 @@
-"""RSS 2.0 output, shaped like hnrss: the link is the article, <comments> is the HN thread."""
+"""RSS 2.0 output. HN feeds are shaped like hnrss: the link is the article, <comments> is the HN thread."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from email.utils import format_datetime, parsedate_to_datetime
 from html import escape
 from urllib.parse import urlsplit
 
-from .config import Digest, Feed
+from .config import Digest, Feed, Rss
 from .preview import Preview
-from .state import Entry
+from .state import Entry, RssEntry
 
 ATOM = "http://www.w3.org/2005/Atom"
 DC = "http://purl.org/dc/elements/1.1/"
@@ -182,6 +182,45 @@ def render_feed(feed: Feed, items: list[tuple[Entry, int]], feed_url: str, page_
         if image:
             ET.SubElement(item, f"{{{MEDIA}}}content", {"url": image, "medium": "image"})
             ET.SubElement(item, f"{{{MEDIA}}}thumbnail", {"url": image})
+    return _document(rss)
+
+
+def rss_item_html(entry: RssEntry) -> str:
+    """An RSS item's body: the image (the source's, else the page's), the excerpt (likewise), then the link."""
+    parts = []
+    if entry.image:
+        parts.append(f'<p><img src="{escape(entry.image)}" alt=""></p>')
+    if entry.excerpt:
+        parts.append(f"<p>{escape(entry.excerpt)}</p>")
+    link = entry.item.link
+    if link:
+        parts.append(f'<p><a href="{escape(link)}">{escape(domain(link) or link)}</a></p>')
+    return "\n".join(parts)
+
+
+def render_rss_feed(feed: Rss, entries: list[RssEntry], feed_url: str, page_url: str, now: dt.datetime) -> bytes:
+    """An RSS feed's document, entries newest first. Items keep the source's title, link, guid, date and categories."""
+    description = f"{feed.title}, from {', '.join(feed.sources)}"
+    if feed.enrich:
+        description += ", with each article's image and excerpt"
+    rss, channel = _channel(feed.title, description, feed_url, page_url, now)
+    for entry in entries:
+        source = entry.item
+        item = ET.SubElement(channel, "item")
+        ET.SubElement(item, "title").text = source.title
+        if source.link:
+            ET.SubElement(item, "link").text = source.link
+        ET.SubElement(item, "description").text = rss_item_html(entry)
+        permalink = "true" if source.permalink else "false"
+        ET.SubElement(item, "guid", {"isPermaLink": permalink}).text = source.guid
+        ET.SubElement(item, "pubDate").text = format_datetime(utc(source.published or entry.first_seen))
+        for category in source.categories:
+            ET.SubElement(item, "category").text = category
+        if source.author:
+            ET.SubElement(item, f"{{{DC}}}creator").text = source.author
+        if entry.image:
+            ET.SubElement(item, f"{{{MEDIA}}}content", {"url": entry.image, "medium": "image"})
+            ET.SubElement(item, f"{{{MEDIA}}}thumbnail", {"url": entry.image})
     return _document(rss)
 
 

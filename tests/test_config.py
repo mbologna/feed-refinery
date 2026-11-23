@@ -12,12 +12,21 @@ def test_the_repo_config_is_valid():
     conf = load(REPO_CONFIG)
     feeds = conf.feeds
     assert conf.digests == [Digest("digest.xml", "Hacker News: daily digest")]
-    assert conf.files == ["frontpage.xml", "best.xml", "top.xml", "digest.xml"]
+    assert conf.files == ["frontpage.xml", "best.xml", "top.xml", "digest.xml", "newssite.xml", "techsite.xml"]
     assert [f.file for f in feeds] == ["frontpage.xml", "best.xml", "top.xml"]
     assert feeds[0].follows_front_page
     assert not feeds[1].follows_front_page
     assert feeds[1].min_points == 100
     assert feeds[2].ranked and feeds[2].min_points == 150
+    newssite, tech = conf.rss
+    assert newssite.sources == ("https://www.newssite.example/feed",)
+    assert newssite.exclude_categories == {"peanuts", "foto del giorno", "celebrity"}
+    assert newssite.exclude_links[0].search("https://www.newssite.example/episodes/x/")
+    assert not newssite.exclude_links[0].search("https://www.newssite.example/flashes/x/")
+    assert newssite.exclude_titles[0].search("Le prime pagine di oggi")
+    assert newssite.enrich and newssite.max_items == 100 and newssite.dedupe == "link"
+    assert len(tech.sources) == 4 and all(s.startswith("https://feeds.techsite.example/") for s in tech.sources)
+    assert tech.enrich and tech.dedupe == "link"
 
 
 def test_defaults_apply():
