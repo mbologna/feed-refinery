@@ -120,6 +120,14 @@ The tests never touch the network: they swap `urlopen` for a table of canned res
 
 Dependencies resolve only to releases at least 7 days old (`exclude-newer` in `pyproject.toml`). The script itself needs none, only the standard library.
 
+## Why not an existing tool
+
+- [hnrss](https://github.com/hnrss/hnrss) (last changed in 2024) filters by points and comments, but has no `og:image` or excerpt, no top comment, no feed of ranked stories with 150+ points, no `pubDate` from when a feed first listed a story, and no daily digest.
+- [RSSHub](https://docs.rsshub.app/)'s Hacker News route also filters by points and comments, and has the same gaps.
+- [Huginn](https://github.com/huginn/huginn), a server that runs automation agents, could put parts of this together only with custom JavaScript agents.
+
+Checked 2026-11-23.
+
 ## Versioning
 
 `main` is what runs: every push to it, and every 30-minute dispatch, deploys the feeds to GitHub Pages. Releases follow SemVer as a changelog: the Monday run's [auto-release](https://github.com/mbologna/auto-release) tags `vX.Y.Z` from the [Conventional Commit](https://www.conventionalcommits.org/) types merged since the last tag (`feat` minor; `fix`, `perf`, `revert` patch; a breaking change major), or cuts a maintenance release when only dependency updates landed; the 30-minute dispatches never release. The tag builds and deploys nothing; its [GitHub Release](https://github.com/mbologna/hackernews-rss/releases) lists the changes. See the [versioning standard](https://github.com/mbologna/.github/blob/main/VERSIONING.md).
