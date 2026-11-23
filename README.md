@@ -1,18 +1,25 @@
-# Hacker News RSS
+# feeds
 
-[![CI](https://github.com/mbologna/hackernews-rss/actions/workflows/ci.yml/badge.svg)](https://github.com/mbologna/hackernews-rss/actions/workflows/ci.yml)
+[![CI](https://github.com/mbologna/feeds/actions/workflows/ci.yml/badge.svg)](https://github.com/mbologna/feeds/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Hacker News RSS feeds whose items carry the linked page's image and excerpt, next to the article and comments links. [hnrss](https://github.com/hnrss/hnrss) gives you only the links. This repo builds the feeds with a scheduled GitHub Actions workflow and publishes them as static files on GitHub Pages.
+RSS feeds whose items carry each article's image and excerpt, from two kinds of source:
 
-**Subscribe:** <https://hackernews-rss.michelebologna.net/>
+- **Hacker News:** the front page, stories with 100+ points, ranked stories and a daily digest, each item with the linked page's image and excerpt, the top comment and the article and comments links. [hnrss](https://github.com/hnrss/hnrss) gives you only the links.
+- **Any RSS or Atom feed:** one site's feed, or several merged into one with duplicates removed, filtered by category, title, link and author, with the article's image and excerpt filled in where the source lacks them.
 
-The feeds are published on GitHub Pages and served at `hackernews-rss.michelebologna.net` by a Cloudflare Worker, so the URLs above keep working wherever the files are hosted. `https://hackernews-rss.michelebologna.net/health` answers 200 `{"status":"ok",…}`, or 503 when the last build is over 3 hours old or a feed's items mostly lack an image.
+This repo builds the feeds with a scheduled GitHub Actions workflow and publishes them as static files on GitHub Pages.
+
+**Subscribe:** <https://feeds.michelebologna.net/>
+
+The feeds are published on GitHub Pages and served at `feeds.michelebologna.net` by a Cloudflare Worker, so the URLs above keep working wherever the files are hosted. `https://feeds.michelebologna.net/health` answers 200 `{"status":"ok",…}`, or 503 when the last build is over 3 hours old or a feed's items mostly lack an image.
 
 | Feed | URL |
 | --- | --- |
 
-Each item has:
+## Hacker News items
+
+Each item of an HN feed has:
 
 - the title, linking to the article (Ask HN and other text posts link to the thread);
 - the page's `og:image` (falling back to `twitter:image`), also as `media:thumbnail` for list views;
@@ -27,9 +34,19 @@ Each feed carries an icon (`<image>`), so readers show one next to its name.
 
 The counts are a snapshot from when the item was built. A page that blocks bots (`403`), times out or isn't HTML gets an item without the image and excerpt.
 
+## RSS items
+
+An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categories, and the author as `dc:creator`. Its description has:
+
+- the image: the source's (an image enclosure, `media:content`, `media:thumbnail` or the first `<img>` in its description), else the article page's `og:image`, also as `media:thumbnail`;
+- the excerpt: the source's description as plain text, cut to about 300 characters, else the page's description;
+- a link to the article.
+
+The article page is fetched only for an item whose source lacks the image or the excerpt, once per item, as for HN stories.
+
 ## Feeds
 
-[`feeds.toml`](feeds.toml) lists the feeds. Each `[[feed]]` table has:
+[`feeds.toml`](feeds.toml) lists the feeds. Each `[[feed]]` table publishes an HN feed:
 
 - `file`: the published file name, ending in `.xml`.
 - `title`: the feed's title.
@@ -46,9 +63,65 @@ Each `[[digest]]` table publishes one item per UTC day, listing that day's top s
 - `days`: days kept (default 7).
 - `publish_hour`: the UTC hour of the next day when a day appears (default 6), by when late stories have had time to score. A day's list is frozen once published.
 
-A push to `main` republishes the feeds. An unknown key or a duplicate `file` fails the build.
+In an HN feed, an item's `pubDate` is when that feed first listed the story, not when it was posted. A story that crosses 100 points a day after it was posted is new to `best.xml` then, and a reader sorting by date shows it at the top. A new feed's first batch is the exception: it carries the stories' post times.
 
-An item's `pubDate` is when that feed first listed the story, not when it was posted. A story that crosses 100 points a day after it was posted is new to `best.xml` then, and a reader sorting by date shows it at the top. A new feed's first batch is the exception: it carries the stories' post times.
+Each `[[rss]]` table publishes items from other feeds:
+
+- `file`, `title`: as for an HN feed.
+- `source`: the URL of an RSS or Atom feed; or `sources`, a list of them, merged into one feed. A table has one or the other.
+- `include_categories`, `exclude_categories`: categories, matched against the whole category, ignoring case.
+- `include_titles`, `exclude_titles`, `include_links`, `exclude_links`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax), each searched anywhere in the item's title or link. Start one with `(?i)` to ignore case.
+- `exclude_authors`: authors, matched against the whole name, ignoring case.
+- `enrich`: `false` skips fetching article pages, so items carry only what the source gives (default `true`).
+- `max_items`: the most items the feed holds, newest first by the source's dates (default 100).
+- `dedupe`: `"link"` (default) or `"link+title"`, below.
+
+The filters apply in two steps. The includes come first: an item must match every include list the table sets, any entry of each. The excludes then drop an item that matches any entry of any exclude list. Changing a filter applies to the items the feed already holds on the next build.
+
+News Site's feed, as published here:
+
+```toml
+[[rss]]
+file = "newssite.xml"
+title = "News Site: articles"
+source = "https://www.newssite.example/feed"
+exclude_categories = ["peanuts", "foto del giorno", "celebrity"]
+exclude_links = ['^https://www\.newssite\.example/(episodes|newsletter)/']
+exclude_titles = ['(?i)^le prime pagine']
+```
+
+Several sources merged into one feed, as for Tech Site's sections, which often carry the same story:
+
+```toml
+[[rss]]
+file = "techsite.xml"
+title = "Tech Site"
+sources = [
+  "https://feeds.techsite.example/features",
+  "https://feeds.techsite.example/technology-lab",
+  "https://feeds.techsite.example/gadgets",
+  "https://feeds.techsite.example/apple",
+]
+```
+
+`dedupe = "link+title"` would also merge stories published under different URLs.
+
+An item stays while a source lists it, and for 7 days after it first appeared once none does, within `max_items`. A source that fails (an HTTP error, a timeout, a page that isn't a feed) keeps its items while the others refresh.
+
+### Duplicates
+
+A story that two sources carry, or one source under two URLs, appears once. Two items are the same story when their canonical links match, or their guids do. The canonical link is the item's link with:
+
+- the scheme and host lowercased (`www.` kept);
+- no fragment and no trailing slash;
+- no tracking parameters: `utm_*`, `fbclid`, `gclid`, `ref`, `mc_cid`, `mc_eid`;
+- the other query parameters sorted.
+
+With `dedupe = "link+title"`, items with the same normalised title also count as one: case and Unicode forms folded, runs of whitespace and punctuation collapsed. This suits sites that publish one story under different URLs.
+
+The copy the feed first saw stays, so its guid holds across builds. Among copies new in the same build, the one with the earliest date wins, then the one from the source listed first. The kept item carries the categories of every copy, so a section feed's tags aren't lost.
+
+A push to `main` republishes the feeds. An unknown key, a wrong type, a regular expression that doesn't compile or a duplicate `file` fails the build.
 
 ## How it's published
 
@@ -66,9 +139,10 @@ A build:
 3. Then refreshes the counts of the stories a feed still holds but the API no longer lists for it (off the front page, out of the ranking), 100 per request.
 4. Fetches the previews still missing, eight pages at a time: the first 512 KB of each, with a 10-second timeout. It retries a failed page on the next two runs, except for permanent errors such as `403` and `404`.
 5. Looks up the top comment of every listed story that has comments, at most every 2 hours per story: the first live reply in the story's `kids` from the HN API, which lists them in HN's order.
-6. Writes each feed, `state.json`, `index.html` and `health.json`, and deploys them.
+6. Fetches every RSS source with a conditional GET (`If-None-Match`, `If-Modified-Since`), a 30-second timeout and one retry after a network error; a source that two feeds share is fetched once. A `304` keeps what the source listed before. It reads the feed with [feedparser](https://github.com/kurtmckee/feedparser), filters and merges the items, then fetches the previews they lack, with the same retry rules as step 4.
+7. Writes each feed, `state.json`, `index.html` and `health.json`, and deploys them.
 
-`health.json` is for outside monitoring: the build time (`built`, Unix seconds) and, per feed, its item count and how many items have an image and an excerpt. When fewer than 30% of a feed's items have an image, the build also leaves a warning on the run's summary page: a sign the runner is being blocked or the page parser broke.
+`health.json` is for outside monitoring: the build time (`built`, Unix seconds) and, per feed, its item count and how many items have an image and an excerpt. Each RSS feed, under `rss`, also has `last_ok` (Unix seconds), the oldest of its sources' last good fetches, `sources_failed`, the sources that failed in this build, and `ok`, false while any source last answered more than 3 hours ago. When fewer than 30% of a feed's items have an image, the build also leaves a warning on the run's summary page: a sign the runner is being blocked or the page parser broke.
 
 The generated files are never committed. Losing `state.json` only means fetching the previews again.
 
@@ -76,31 +150,31 @@ After deploying, the workflow fetches every published feed and fails if one is m
 
 ## Run it yourself
 
-The script needs Python 3.15 or later (uv, below, downloads it if the machine has none) and network access to the HN APIs and the linked pages, but no other packages. It reads the feed list from `feeds.toml` in the working directory, so start from a copy of this repo's file. With [uv](https://docs.astral.sh/uv/):
+The script needs Python 3.15 or later (uv, below, downloads it if the machine has none), [feedparser](https://github.com/kurtmckee/feedparser), and network access to the HN APIs, the RSS sources and the linked pages. It reads the feed list from `feeds.toml` in the working directory, so start from a copy of this repo's file. With [uv](https://docs.astral.sh/uv/), which installs feedparser too:
 
 ```sh
-curl -O https://raw.githubusercontent.com/mbologna/hackernews-rss/main/feeds.toml
-uvx --from git+https://github.com/mbologna/hackernews-rss hackernews-rss build \
-  --output-dir public --page-url https://hn.example.com/ --previous-state public/state.json
+curl -O https://raw.githubusercontent.com/mbologna/feeds/main/feeds.toml
+uvx --from git+https://github.com/mbologna/feeds feeds build \
+  --output-dir public --page-url https://feeds.example.com/ --previous-state public/state.json
 ```
 
-From a clone, `uv run hackernews-rss build` takes the same options. The `build` options:
+From a clone, `uv run feeds build` takes the same options. The `build` options:
 
 - `--config`: the feed list (default `feeds.toml`);
 - `--output-dir`: where to write the feeds, `index.html`, `health.json`, `state.json` and the icons (default `public`);
 - `--page-url`: the URL the folder is served from, used for the links in the feeds and on the index page (default: this site's address);
 - `--previous-state`: the previous run's `state.json`, as a path or URL. Without the option the build fetches `state.json` from `--page-url`; an empty string starts fresh.
 
-Keep the output directory between runs and point `--previous-state` at the `state.json` inside it: the build reads it before writing the new one. The digest's frozen days, the fetched previews and the time each feed first listed a story all live there. A missing or unreadable file starts an empty state, as on the first run, so every preview is fetched again.
+Keep the output directory between runs and point `--previous-state` at the `state.json` inside it: the build reads it before writing the new one. The digest's frozen days, the fetched previews, the time each feed first listed a story and each RSS source's validators all live there. A missing or unreadable file starts an empty state, as on the first run, so every preview is fetched again.
 
 Serve the folder with any static web server, such as nginx, Caddy or `python3 -m http.server`. The published site rebuilds every 30 minutes, at :07 and :37, from the directory that holds `feeds.toml`:
 
 ```cron
 # Every 30 minutes, at :07 and :37
-7,37 * * * *  cd /srv/hackernews-rss && uvx --from git+https://github.com/mbologna/hackernews-rss hackernews-rss build --output-dir /var/www/hn --page-url https://hn.example.com/ --previous-state /var/www/hn/state.json
+7,37 * * * *  cd /srv/feeds && uvx --from git+https://github.com/mbologna/feeds feeds build --output-dir /var/www/feeds --page-url https://feeds.example.com/ --previous-state /var/www/feeds/state.json
 ```
 
-Give cron the full path to `uvx` if its `PATH` does not include it. `hackernews-rss check --page-url https://hn.example.com/`, run from the same directory, exits with status 1 when a configured feed is missing or was built more than 3 hours ago (`--max-age-hours`).
+Give cron the full path to `uvx` if its `PATH` does not include it. `feeds check --page-url https://feeds.example.com/`, run from the same directory, exits with status 1 when a configured feed is missing or was built more than 3 hours ago (`--max-age-hours`).
 
 ## Development
 
@@ -110,27 +184,36 @@ uv run ruff check . && uv run ruff format --check .
 uv run pre-commit run --all-files  # ruff, mypy, bandit and file checks; `uv run pre-commit install` runs them on each commit
 
 # Build into public/ against the live APIs, starting from no state
-uv run hackernews-rss build --output-dir public --previous-state ''
+uv run feeds build --output-dir public --previous-state ''
 
 # Check the published feeds' age
-uv run hackernews-rss check --max-age-hours 3
+uv run feeds check --max-age-hours 3
 ```
 
-The tests never touch the network: they swap `urlopen` for a table of canned responses.
+The tests never touch the network: they swap `urlopen` for a table of canned responses. The RSS fixtures under `tests/fixtures/` are cut from News Site's live feed, plus an Atom sample and a page that isn't a feed.
 
-Dependencies resolve only to releases at least 7 days old (`exclude-newer` in `pyproject.toml`). The script itself needs none, only the standard library.
+Dependencies resolve only to releases at least 7 days old (`exclude-newer` in `pyproject.toml`). The script itself needs only feedparser and the standard library.
 
 ## Why not an existing tool
+
+For Hacker News:
 
 - [hnrss](https://github.com/hnrss/hnrss) (last changed in 2024) filters by points and comments, but has no `og:image` or excerpt, no top comment, no feed of ranked stories with 150+ points, no `pubDate` from when a feed first listed a story, and no daily digest.
 - [RSSHub](https://docs.rsshub.app/)'s Hacker News route also filters by points and comments, and has the same gaps.
 - [Huginn](https://github.com/huginn/huginn), a server that runs automation agents, could put parts of this together only with custom JavaScript agents.
 
-Checked 2026-11-23.
+For filtering other feeds:
+
+- [FreshRSS](https://freshrss.org/) filters by category, title, URL and regular expression and can republish a saved query as RSS, but it is a server to run, with a database and a public route, and adds no images or excerpts.
+- [RSS-Bridge](https://github.com/RSS-Bridge/rss-bridge)'s FilterBridge has no category filter, and the public instances belong to others.
+- [Miniflux](https://miniflux.app/) filters but can't republish a feed.
+- [Feedly](https://feedly.com/)'s mute filters need a Pro+ plan and match keywords only, not categories or links.
+
+Actions and Pages cost nothing for a public repository, and the HN feeds already had the preview fetching and the state that RSS items need. Checked 2026-11-23.
 
 ## Versioning
 
-`main` is what runs: every push to it, and every 30-minute dispatch, deploys the feeds to GitHub Pages. Releases follow SemVer as a changelog: the Monday run's [auto-release](https://github.com/mbologna/auto-release) tags `vX.Y.Z` from the [Conventional Commit](https://www.conventionalcommits.org/) types merged since the last tag (`feat` minor; `fix`, `perf`, `revert` patch; a breaking change major), or cuts a maintenance release when only dependency updates landed; the 30-minute dispatches never release. The tag builds and deploys nothing; its [GitHub Release](https://github.com/mbologna/hackernews-rss/releases) lists the changes. See the [versioning standard](https://github.com/mbologna/.github/blob/main/VERSIONING.md).
+`main` is what runs: every push to it, and every 30-minute dispatch, deploys the feeds to GitHub Pages. Releases follow SemVer as a changelog: the Monday run's [auto-release](https://github.com/mbologna/auto-release) tags `vX.Y.Z` from the [Conventional Commit](https://www.conventionalcommits.org/) types merged since the last tag (`feat` minor; `fix`, `perf`, `revert` patch; a breaking change major), or cuts a maintenance release when only dependency updates landed; the 30-minute dispatches never release. The tag builds and deploys nothing; its [GitHub Release](https://github.com/mbologna/feeds/releases) lists the changes. See the [versioning standard](https://github.com/mbologna/.github/blob/main/VERSIONING.md).
 
 ## License
 

@@ -4,22 +4,29 @@ import urllib.error
 import pytest
 from conftest import FakeResponse
 
-from hackernews_rss.comments import Comment
-from hackernews_rss.config import Digest, Feed
-from hackernews_rss.preview import Preview
-from hackernews_rss.source import Story
-from hackernews_rss.state import (
+from feeds.comments import Comment
+from feeds.config import Digest, Feed, Rss
+from feeds.preview import Preview
+from feeds.rss import Fetched, Item
+from feeds.source import Story
+from feeds.state import (
     COMMENT_INTERVAL,
     MAX_ATTEMPTS,
+    RSS_KEEP,
     Entry,
+    RssEntry,
+    RssFeed,
+    Source,
     State,
     add_digest_day,
     digest_days_due,
     fetch_comments,
     fetch_previews,
+    fetch_rss_previews,
     load,
     publish_time,
     update,
+    update_rss,
 )
 
 HOUR = 3600
@@ -150,6 +157,8 @@ def test_round_trip():
         b"[]",
         b'{"version": 99}',
         b'{"version": 1}',
+        b'{"version": 2, "stories": {}, "feeds": {}, "rss": {"r.xml": {"sources": {}}}}',
+        b'{"version": 2, "stories": {}, "feeds": {}, "rss": {"r.xml": {"sources": {"u": {"etag": 1, "x": 2}}, "items": {}}}}',
         b'{"version": 1, "stories": {"1": {"story": {}}}, "feeds": {}}',
     ],
 )
@@ -283,3 +292,316 @@ def test_digests_survive_a_round_trip_and_older_files_load():
     assert State.from_json(state.to_json()) == state
     old = b'{"version":1,"stories":{},"feeds":{}}'
     assert State.from_json(old).digests == {}
+
+
+# RSS feeds
+
+A, B, C = "https://a.example/feed", "https://b.example/feed", "https://c.example/feed"
+NEWS = Rss("news.xml", "News", (A, B, C))
+
+
+def item(n, link="", guid=None, published=NOW - HOUR, title=None, categories=(), **kw):
+    link = f"https://news.example/{n}" if link == "" else link
+    return Item(
+        guid=guid or link or f"guid-{n}",
+        link=link,
+        title=title or f"Story {n}",
+        published=published,
+        categories=tuple(categories),
+        author=kw.pop("author", ""),
+        summary=kw.pop("summary", ""),
+        image=kw.pop("image", None),
+    )
+
+
+def ok(*items, etag=None, modified=None):
+    return Fetched(200, list(items), etag, modified)
+
+
+def test_rss_items_are_merged_and_sources_remember_their_validators():
+    state = State()
+    update_rss(state, [NEWS], {"news.xml": {A: ok(item(1), item(2), etag='"a1"', modified="Mon"), B: ok(item(3))}}, NOW)
+    feed = state.rss["news.xml"]
+    assert feed.sources[A] == Source('"a1"', "Mon", NOW)
+    assert feed.sources[B] == Source(None, None, NOW)
+    assert feed.sources[C] == Source()  # never fetched
+    assert feed.last_ok(NEWS) is None  # C has never answered
+    assert list(feed.items) == ["https://news.example/1", "https://news.example/2", "https://news.example/3"]
+    assert feed.items["https://news.example/3"].from_sources == [B]
+    assert feed.items["https://news.example/1"].first_seen == NOW
+
+
+def test_rss_items_are_ordered_by_the_sources_dates_and_capped():
+    state = State()
+    feed = Rss("r.xml", "R", (A,), max_items=2)
+    found = [item(1, published=NOW - 3 * HOUR), item(2, published=None), item(3, published=NOW - HOUR)]
+    update_rss(state, [feed], {"r.xml": {A: ok(*found)}}, NOW)
+    # An item without a date sorts by when the feed first saw it.
+    assert [e.item.title for e in state.rss["r.xml"].items.values()] == ["Story 2", "Story 3"]
+
+
+def test_the_filters_apply_before_the_merge_and_again_to_kept_items():
+    state = State()
+    feed = Rss("r.xml", "R", (A,), exclude_categories=frozenset({"bits"}))
+    update_rss(state, [feed], {"r.xml": {A: ok(item(1), item(2, categories=["Bits"]))}}, NOW)
+    assert list(state.rss["r.xml"].items) == ["https://news.example/1"]
+    # A new exclude drops a kept item at once, even when the source is unchanged.
+    stricter = Rss("r.xml", "R", (A,), exclude_titles=(__import__("re").compile("Story 1"),))
+    update_rss(state, [stricter], {"r.xml": {A: Fetched(304, [], None, None)}}, NOW + HOUR)
+    assert state.rss["r.xml"].items == {}
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ("https://news.example/a", "HTTPS://NEWS.example/a/"),
+        ("https://news.example/a", "https://news.example/a#comments"),
+        ("https://news.example/a", "https://news.example/a?utm_source=rss&utm_medium=feed"),
+        ("https://news.example/a?x=1&y=2", "https://news.example/a?y=2&x=1&fbclid=abc"),
+    ],
+)
+def test_copies_with_the_same_canonical_link_are_one_story(first, second):
+    state = State()
+    update_rss(state, [NEWS], {"news.xml": {A: ok(item(1, link=first)), B: ok(item(2, link=second))}}, NOW)
+    (entry,) = state.rss["news.xml"].items.values()
+    assert entry.item.link == first and entry.from_sources == [A, B]
+
+
+def test_copies_with_the_same_guid_are_one_story():
+    state = State()
+    update_rss(
+        state,
+        [NEWS],
+        {"news.xml": {A: ok(item(1, guid="tag:x,1")), B: ok(item(2, link="https://mirror.example/1", guid="tag:x,1"))}},
+        NOW,
+    )
+    assert len(state.rss["news.xml"].items) == 1
+
+
+def test_link_and_title_dedup():
+    same_title = {A: ok(item(1, title="Kyiv’s bridges: why")), B: ok(item(2, title="KYIV S BRIDGES — WHY?"))}
+    state = State()
+    update_rss(state, [NEWS], {"news.xml": same_title}, NOW)
+    assert len(state.rss["news.xml"].items) == 2  # "link": different links stay apart
+    by_title = Rss("news.xml", "News", (A, B, C), dedupe="link+title")
+    state = State()
+    update_rss(state, [by_title], {"news.xml": same_title}, NOW)
+    assert len(state.rss["news.xml"].items) == 1
+    # A title that folds to nothing never matches another.
+    state = State()
+    update_rss(state, [by_title], {"news.xml": {A: ok(item(1, title="…")), B: ok(item(2, title="?!"))}}, NOW)
+    assert len(state.rss["news.xml"].items) == 2
+
+
+def test_the_kept_copy_is_the_earliest_published_then_the_source_order_and_categories_are_merged():
+    state = State()
+    a = item(1, link="https://news.example/s?utm_source=a", published=NOW - HOUR, categories=["World"])
+    b = item(2, link="https://news.example/s", published=NOW - 2 * HOUR, categories=["Europe", "World"])
+    c = item(3, link="https://news.example/s#x", published=NOW - 2 * HOUR, categories=["Politics"])
+    update_rss(state, [NEWS], {"news.xml": {A: ok(a), B: ok(b), C: ok(c)}}, NOW)
+    (entry,) = state.rss["news.xml"].items.values()
+    # b and c share the earliest date; b's source comes first in the config.
+    assert entry.item.guid == b.guid
+    assert entry.item.categories == ("Europe", "World", "Politics")
+    assert entry.from_sources == [A, B, C]
+
+
+def test_the_first_seen_copy_stays_across_runs_with_a_stable_guid():
+    state = State()
+    update_rss(state, [NEWS], {"news.xml": {A: ok(item(1, link="https://news.example/s", published=NOW))}}, NOW)
+    # An hour later another source carries an older-dated copy: the kept one stays.
+    older = item(2, link="https://news.example/s/", published=NOW - 5 * HOUR, categories=["Extra"])
+    update_rss(state, [NEWS], {"news.xml": {B: ok(older), A: Fetched(304, [], None, None)}}, NOW + HOUR)
+    (entry,) = state.rss["news.xml"].items.values()
+    assert entry.item.guid == "https://news.example/s" and entry.first_seen == NOW
+    assert entry.item.categories == ("Extra",)
+    assert entry.from_sources == [A, B]
+    # It survives a round trip, and a third run still matches it.
+    state = State.from_json(state.to_json())
+    update_rss(
+        state, [NEWS], {"news.xml": {A: ok(item(1, link="https://news.example/s", published=NOW))}}, NOW + 2 * HOUR
+    )
+    (entry,) = state.rss["news.xml"].items.values()
+    assert entry.item.guid == "https://news.example/s" and entry.from_sources == [A, B]
+
+
+def test_an_edited_item_is_refreshed_and_a_changed_link_drops_its_preview():
+    state = State()
+    update_rss(state, [NEWS], {"news.xml": {A: ok(item(1, guid="g1", title="Old"))}}, NOW)
+    (entry,) = state.rss["news.xml"].items.values()
+    entry.preview, entry.attempts = Preview(image="https://i.example/1.png"), 1
+    update_rss(state, [NEWS], {"news.xml": {A: ok(item(1, guid="g1", title="New"))}}, NOW + HOUR)
+    (entry,) = state.rss["news.xml"].items.values()
+    assert entry.item.title == "New" and entry.preview is not None
+    moved = item(1, link="https://news.example/moved", guid="g1", title="New")
+    update_rss(state, [NEWS], {"news.xml": {A: ok(moved)}}, NOW + 2 * HOUR)
+    (entry,) = state.rss["news.xml"].items.values()
+    assert entry.item.link == "https://news.example/moved"
+    assert (entry.preview, entry.attempts) == (None, 0)
+    assert list(state.rss["news.xml"].items) == ["https://news.example/moved"]  # the key follows the link
+    # Another copy of the moved item in the same run still matches it.
+    again = item(2, link="https://mirror.example/x", guid="g1", title="New")
+    update_rss(state, [NEWS], {"news.xml": {A: ok(item(1, guid="g1", title="New")), B: ok(again)}}, NOW + 2 * HOUR)
+    assert len(state.rss["news.xml"].items) == 1
+    update_rss(state, [NEWS], {"news.xml": {A: ok(moved)}}, NOW + 2 * HOUR)
+    # The old link now belongs to no item: a new story there is its own entry.
+    update_rss(state, [NEWS], {"news.xml": {A: ok(moved, item(9, link="https://news.example/1"))}}, NOW + 3 * HOUR)
+    assert len(state.rss["news.xml"].items) == 2
+
+
+def test_one_failing_source_keeps_its_items_while_the_others_refresh():
+    state = State()
+    update_rss(state, [NEWS], {"news.xml": {A: ok(item(1)), B: ok(item(2)), C: ok(item(3))}}, NOW)
+    later = NOW + 4 * HOUR
+    update_rss(
+        state, [NEWS], {"news.xml": {A: ok(item(4)), B: TimeoutError("slow"), C: Fetched(304, [], None, None)}}, later
+    )
+    feed = state.rss["news.xml"]
+    assert set(feed.items) == {f"https://news.example/{n}" for n in (1, 2, 3, 4)}
+    assert feed.items["https://news.example/1"].from_sources == []  # A dropped it
+    assert feed.items["https://news.example/2"].from_sources == [B]  # B failed: still listed
+    assert feed.items["https://news.example/3"].from_sources == [C]  # C unchanged
+    assert feed.sources[A].last_ok == later and feed.sources[C].last_ok == later
+    assert feed.sources[B].last_ok == NOW
+    assert feed.last_ok(NEWS) == NOW
+
+
+def test_items_no_source_lists_leave_after_a_week():
+    state = State()
+    feed = Rss("r.xml", "R", (A,))
+    update_rss(state, [feed], {"r.xml": {A: ok(item(1))}}, NOW)
+    update_rss(state, [feed], {"r.xml": {A: ok(item(2))}}, NOW + RSS_KEEP)
+    assert set(state.rss["r.xml"].items) == {"https://news.example/1", "https://news.example/2"}
+    update_rss(state, [feed], {"r.xml": {A: ok(item(2))}}, NOW + RSS_KEEP + 1)
+    assert set(state.rss["r.xml"].items) == {"https://news.example/2"}
+    # One a failing source still lists stays however old.
+    update_rss(state, [feed], {"r.xml": {A: ValueError("not a feed")}}, NOW + 3 * RSS_KEEP)
+    assert set(state.rss["r.xml"].items) == {"https://news.example/2"}
+
+
+def test_removed_sources_and_feeds_are_forgotten():
+    state = State()
+    update_rss(state, [NEWS], {"news.xml": {A: ok(item(1)), B: ok(item(2))}}, NOW)
+    only_a = Rss("news.xml", "News", (A,))
+    update_rss(state, [only_a], {"news.xml": {A: ok(item(1))}}, NOW + HOUR)
+    feed = state.rss["news.xml"]
+    assert list(feed.sources) == [A]
+    assert feed.items["https://news.example/2"].from_sources == []  # stays its week
+    update_rss(state, [], {}, NOW + 2 * HOUR)
+    assert state.rss == {}
+
+
+def test_items_without_a_link_are_kept_by_guid():
+    state = State()
+    update_rss(state, [NEWS], {"news.xml": {A: ok(item(1, link=None, guid="note-1"))}}, NOW)
+    update_rss(state, [NEWS], {"news.xml": {A: ok(item(1, link=None, guid="note-1"))}}, NOW + HOUR)
+    assert list(state.rss["news.xml"].items) == ["guid:note-1"]
+
+
+def test_rss_round_trip():
+    state = State(
+        rss={
+            "news.xml": RssFeed(
+                {A: Source('"e"', "Mon", NOW), B: Source()},
+                {
+                    "https://news.example/1": RssEntry(
+                        item(1, categories=["X", "Y"], author="Ada", summary="Sum", image="https://i.example/1.png"),
+                        NOW,
+                        Preview("https://i.example/og.png", "Desc", "Site"),
+                        1,
+                        [A, B],
+                    ),
+                    "guid:n": RssEntry(item(2, link=None, guid="n", published=None), NOW - HOUR),
+                },
+            )
+        }
+    )
+    assert State.from_json(state.to_json()) == state
+
+
+def test_version_1_state_loads_with_no_rss_feeds_and_keeps_the_rest():
+    old = (
+        b'{"version":1,"stories":{"1":{"story":{"id":"1","title":"T","url":"https://e.example/","points":5,'
+        b'"comments":0,"created":0,"author":"a","text":""},"preview":{"image":"https://e.example/i.png",'
+        b'"description":"D","site_name":null},"attempts":0,"comment":null,"comment_checked":7}},'
+        b'"feeds":{"f.xml":{"1":100}},"digests":{"d.xml":{"2026-11-18":["1"]}}}'
+    )
+    state = State.from_json(old)
+    assert state.rss == {}
+    assert state.stories["1"].preview == Preview("https://e.example/i.png", "D", None)
+    assert state.stories["1"].comment_checked == 7
+    assert state.feeds == {"f.xml": {"1": 100}} and state.digests == {"d.xml": {"2026-11-18": ["1"]}}
+    assert b'"version":2' in state.to_json()
+
+
+def rss_state(*entries, file="news.xml"):
+    return State(rss={file: RssFeed({}, {e.item.link or e.item.guid: e for e in entries})})
+
+
+def test_rss_previews_fill_what_the_source_lacks_and_are_never_refetched():
+    bare = RssEntry(item(1), NOW)
+    no_text = RssEntry(item(2, image="https://i.example/2.png"), NOW)
+    complete = RssEntry(item(3, image="https://i.example/3.png", summary="Text"), NOW)
+    no_link = RssEntry(item(4, link=None, guid="n4"), NOW)
+    state = rss_state(bare, no_text, complete, no_link)
+    asked = []
+
+    def fetch(url):
+        asked.append(url)
+        return Preview(image="https://og.example/i.png", description="OG")
+
+    fetched, failed = fetch_rss_previews(state, [NEWS], fetch)
+    assert (fetched, failed) == (2, [])
+    assert sorted(asked) == ["https://news.example/1", "https://news.example/2"]
+    assert bare.image == "https://og.example/i.png" and bare.excerpt == "OG"
+    assert no_text.image == "https://i.example/2.png" and no_text.excerpt == "OG"  # the source's image first
+    assert complete.preview == Preview() and complete.excerpt == "Text"
+    assert no_link.preview == Preview() and no_link.image is None and no_link.excerpt is None
+
+    asked.clear()
+    assert fetch_rss_previews(state, [NEWS], fetch) == (0, [])
+    assert asked == []
+
+
+def test_rss_previews_follow_the_retry_rules():
+    flaky = RssEntry(item(1), NOW)
+    blocked = RssEntry(item(2), NOW)
+    spent = RssEntry(item(3), NOW, attempts=MAX_ATTEMPTS)
+    state = rss_state(flaky, blocked, spent)
+
+    def fetch(url):
+        if url.endswith("/1"):
+            raise TimeoutError("slow")
+        raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
+
+    for run in range(1, MAX_ATTEMPTS + 1):
+        fetched, failed = fetch_rss_previews(state, [NEWS], fetch)
+        assert fetched == 0
+        assert [u for u, _ in failed] == (["https://news.example/1"] if run > 1 else sorted(u for u, _ in failed))
+        assert flaky.attempts == run
+    assert blocked.attempts == MAX_ATTEMPTS  # a 404 gives up at once
+    assert fetch_rss_previews(state, [NEWS], fetch) == (0, [])  # the cap: no more tries
+    assert spent.preview is None
+
+
+def test_rss_previews_skip_feeds_without_enrich_and_share_one_fetch_per_link():
+    plain = Rss("plain.xml", "P", (A,), enrich=False)
+    shared = item(1)
+    state = State(
+        rss={
+            "news.xml": RssFeed({}, {"k": RssEntry(shared, NOW)}),
+            "other.xml": RssFeed({}, {"k": RssEntry(shared, NOW)}),
+            "plain.xml": RssFeed({}, {"k": RssEntry(item(2), NOW)}),
+        }
+    )
+    asked = []
+
+    def fetch(url):
+        asked.append(url)
+        return Preview(description="OG")
+
+    other = Rss("other.xml", "O", (A,))
+    assert fetch_rss_previews(state, [NEWS, other, plain, Rss("gone.xml", "G", (A,))], fetch) == (1, [])
+    assert asked == ["https://news.example/1"]
+    assert state.rss["other.xml"].items["k"].excerpt == "OG"
+    assert state.rss["plain.xml"].items["k"].preview is None

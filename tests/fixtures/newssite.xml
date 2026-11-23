@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+	xmlns:slash="http://purl.org/rss/1.0/modules/slash/"
+	>
+    <channel>
+        <title>News Site</title>
+        <atom:link href="https://www.newssite.example/feed" rel="self" type="application/rss+xml" />
+        <link>https://www.newssite.example</link>
+        <description>Gli articoli, le rassegne, i blog, le foto, tutto quello che arriva dal mondo e dalla rete.</description>
+        <lastBuildDate>Mon, 23 Nov 2026 21:08:24 +0000</lastBuildDate>
+        <language>it-IT</language>
+        <sy:updatePeriod>hourly</sy:updatePeriod>
+        <sy:updateFrequency>1</sy:updateFrequency>
+        <generator>NEWS_SAMPLE</generator>
+        <image>
+            <url>https://www.newssite.example/wp-content/uploads/2017/09/cropped-newssite-site-icon-32x32.png</url>
+            <title>News Site</title>
+            <link>https://www.newssite.example</link>
+            <width>32</width>
+            <height>32</height>
+        </image>
+        <item>
+    <title>Cosa dice il film di Chiara Ferragni del &#8220;pandorogate&#8221;</title>
+    <link>https://www.newssite.example/2026/11/23/chiara-ferragni-pandorogate-documentario/</link>
+    <comments>https://www.newssite.example/2026/11/23/chiara-ferragni-pandorogate-documentario/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Mon, 23 Nov 2026 19:01:24 +0000</pubDate>
+    <category><![CDATA[Cultura]]></category>
+    <guid isPermaLink="false">https://www.newssite.example/2026/11/23/chiara-ferragni-pandorogate-documentario/</guid>
+    <description><![CDATA[<div><img src="https://static-prod.cdn.newssite.example/wp-content/uploads/2026/11/23/680x453/1795460433-chiara.png" style="width:100%" class="webfeedsFeaturedVisual"></div>Non aveva mai parlato delle sue responsabilità e lo fa molto poco anche questa volta]]></description>
+    <wfw:commentRss>https://www.newssite.example/2026/11/23/chiara-ferragni-pandorogate-documentario/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>Un uomo senzatetto è stato trovato morto nel cortile della Sapienza a Roma, dove si era accampato da giorni</title>
+    <link>https://www.newssite.example/2026/11/23/morto-senzatetto-tenda-sapienza-roma/</link>
+    <comments>https://www.newssite.example/2026/11/23/morto-senzatetto-tenda-sapienza-roma/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Mon, 23 Nov 2026 19:47:22 +0000</pubDate>
+    <category><![CDATA[Bits]]></category><category><![CDATA[Italia]]></category>
+    <guid isPermaLink="false">https://www.newssite.example/2026/11/23/morto-senzatetto-tenda-sapienza-roma/</guid>
+    <description><![CDATA[<div><img src="https://static-prod.cdn.newssite.example/wp-content/uploads/2026/11/23/680x453/1795463010-24970193_large.jpg" style="width:100%" class="webfeedsFeaturedVisual"></div>]]></description>
+    <wfw:commentRss>https://www.newssite.example/2026/11/23/morto-senzatetto-tenda-sapienza-roma/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>Jensen Huang è di nuovo l&#8217;amministratore delegato di Nvidia</title>
+    <link>https://www.newssite.example/2026/11/23/nvidia-ritorno-jensen-huang/</link>
+    <comments>https://www.newssite.example/2026/11/23/nvidia-ritorno-jensen-huang/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Mon, 23 Nov 2026 14:27:12 +0000</pubDate>
+    <category><![CDATA[Mondo]]></category><category><![CDATA[Tecnologia]]></category>
+    <guid isPermaLink="false">https://www.newssite.example/2026/11/23/nvidia-ritorno-jensen-huang/</guid>
+    <description><![CDATA[<div><img src="https://static-prod.cdn.newssite.example/wp-content/uploads/2026/11/23/680x453/1795443462-AP26294365742048.jpg" style="width:100%" class="webfeedsFeaturedVisual"></div>È stato reintegrato dal consiglio di amministrazione due settimane dopo le sue dimissioni, dopo un intervento di Trump]]></description>
+    <wfw:commentRss>https://www.newssite.example/2026/11/23/nvidia-ritorno-jensen-huang/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>Ep 372 – Le persone buone fanno cose per le altre persone</title>
+    <link>https://www.newssite.example/episodes/ep-372-le-persone-buone-fanno-cose-per-le-altre-persone/</link>
+    <comments>https://www.newssite.example/episodes/ep-372-le-persone-buone-fanno-cose-per-le-altre-persone/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Mon, 23 Nov 2026 16:00:37 +0000</pubDate>
+
+    <guid isPermaLink="false">https://www.newssite.example/episodes/ep-372-le-persone-buone-fanno-cose-per-le-altre-persone/</guid>
+    <description><![CDATA[]]></description>
+    <wfw:commentRss>https://www.newssite.example/episodes/ep-372-le-persone-buone-fanno-cose-per-le-altre-persone/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>Da leggere per provare a capire l&#8217;ex Ilva di Taranto</title>
+    <link>https://www.newssite.example/topics/da-leggere-per-provare-a-capire-lex-ilva-di-taranto/</link>
+    <comments>https://www.newssite.example/topics/da-leggere-per-provare-a-capire-lex-ilva-di-taranto/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Mon, 23 Nov 2026 09:33:40 +0000</pubDate>
+
+    <guid isPermaLink="false">https://www.newssite.example/topics/da-leggere-per-provare-a-capire-lex-ilva-di-taranto/</guid>
+    <description><![CDATA[]]></description>
+    <wfw:commentRss>https://www.newssite.example/topics/da-leggere-per-provare-a-capire-lex-ilva-di-taranto/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>La locandina di &#8220;Artificial&#8221; di Guadagnino si è fatta notare</title>
+    <link>https://www.newssite.example/flashes/poster-artificial/</link>
+    <comments>https://www.newssite.example/flashes/poster-artificial/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Mon, 23 Nov 2026 09:04:05 +0000</pubDate>
+
+    <guid isPermaLink="false">https://www.newssite.example/flashes/poster-artificial/</guid>
+    <description><![CDATA[<div><img src="https://static-prod.cdn.newssite.example/wp-content/uploads/2026/11/23/680x447/1795421740-artificial-.jpg" style="width:100%" class="webfeedsFeaturedVisual"></div>]]></description>
+    <wfw:commentRss>https://www.newssite.example/flashes/poster-artificial/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>Lunedì 23 novembre</title>
+    <link>https://www.newssite.example/2026/11/23/lunedi-23-novembre-3/</link>
+    <comments>https://www.newssite.example/2026/11/23/lunedi-23-novembre-3/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Mon, 23 Nov 2026 07:17:59 +0000</pubDate>
+    <category><![CDATA[foto del giorno]]></category>
+    <guid isPermaLink="false">https://www.newssite.example/2026/11/23/lunedi-23-novembre-3/</guid>
+    <description><![CDATA[<div><img src="https://static-prod.cdn.newssite.example/wp-content/uploads/2026/11/23/680x453/1795418239-AP26326395685074.jpg" style="width:100%" class="webfeedsFeaturedVisual"></div>Le foto dal mondo, man mano che arrivano]]></description>
+    <wfw:commentRss>https://www.newssite.example/2026/11/23/lunedi-23-novembre-3/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>Peanuts 2026 novembre 23</title>
+    <link>https://www.newssite.example/2026/11/23/peanuts-2026-novembre-23/</link>
+    <comments>https://www.newssite.example/2026/11/23/peanuts-2026-novembre-23/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Mon, 23 Nov 2026 07:00:37 +0000</pubDate>
+    <category><![CDATA[peanuts]]></category>
+    <guid isPermaLink="false">https://www.newssite.example/2026/11/23/peanuts-2026-novembre-23/</guid>
+    <description><![CDATA[<div><img src="https://static-prod.cdn.newssite.example/wp-content/uploads/2026/11/17/680x203/1794912795-pt_c261123.jpg" style="width:100%" class="webfeedsFeaturedVisual"></div>]]></description>
+    <wfw:commentRss>https://www.newssite.example/2026/11/23/peanuts-2026-novembre-23/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>Le prime pagine di oggi</title>
+    <link>https://www.newssite.example/2026/11/23/le-prime-pagine-di-oggi-4742/</link>
+    <comments>https://www.newssite.example/2026/11/23/le-prime-pagine-di-oggi-4742/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Mon, 23 Nov 2026 05:55:04 +0000</pubDate>
+    <category><![CDATA[Media]]></category>
+    <guid isPermaLink="false">https://www.newssite.example/2026/11/23/le-prime-pagine-di-oggi-4742/</guid>
+    <description><![CDATA[<div><img src="https://static-prod.cdn.newssite.example/wp-content/uploads/2026/11/23/680x453/1795413844-repubblica_apertura.jpg" style="width:100%" class="webfeedsFeaturedVisual"></div>Le indagini sul suicidio di De Gennaro, il fallimento della COP31, e l’attacco a una nave militare russa in Libia]]></description>
+    <wfw:commentRss>https://www.newssite.example/2026/11/23/le-prime-pagine-di-oggi-4742/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>Evening Post, le storie di oggi</title>
+    <link>https://www.newssite.example/newsletter/7d5db4897c3a7e74651428c7c79dc2e1/</link>
+    <comments>https://www.newssite.example/newsletter/7d5db4897c3a7e74651428c7c79dc2e1/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Sun, 22 Nov 2026 23:00:00 +0000</pubDate>
+
+    <guid isPermaLink="false">https://www.newssite.example/newsletter/7d5db4897c3a7e74651428c7c79dc2e1/</guid>
+    <description><![CDATA[]]></description>
+    <wfw:commentRss>https://www.newssite.example/newsletter/7d5db4897c3a7e74651428c7c79dc2e1/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>Come funzioneranno i visti agevolati per giovani tra Regno Unito e Unione Europea</title>
+    <link>https://www.newssite.example/2026/11/21/nuovi-visti-giovani-regno-unito-unione-europea/</link>
+    <comments>https://www.newssite.example/2026/11/21/nuovi-visti-giovani-regno-unito-unione-europea/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Sat, 21 Nov 2026 11:39:02 +0000</pubDate>
+    <category><![CDATA[Konrad]]></category><category><![CDATA[Mondo]]></category>
+    <guid isPermaLink="false">https://www.newssite.example/2026/11/21/nuovi-visti-giovani-regno-unito-unione-europea/</guid>
+    <description><![CDATA[<div><img src="https://static-prod.cdn.newssite.example/wp-content/uploads/2026/11/21/680x511/1795256023-partenze-luton.jpg" style="width:100%" class="webfeedsFeaturedVisual"></div>Potranno riceverli 100mila europei ogni anno, ma non saranno disponibili da subito]]></description>
+    <wfw:commentRss>https://www.newssite.example/2026/11/21/nuovi-visti-giovani-regno-unito-unione-europea/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item><item>
+    <title>Perché i ponti di Kyiv sono così importanti</title>
+    <link>https://www.newssite.example/2026/11/21/importanza-ponti-kyiv-attaccati/</link>
+    <comments>https://www.newssite.example/2026/11/21/importanza-ponti-kyiv-attaccati/#respond</comments>
+    <dc:creator></dc:creator>
+    <pubDate>Sat, 21 Nov 2026 07:40:51 +0000</pubDate>
+    <category><![CDATA[Guerra in Ucraina]]></category><category><![CDATA[Mondo]]></category>
+    <guid isPermaLink="false">https://www.newssite.example/2026/11/21/importanza-ponti-kyiv-attaccati/</guid>
+    <description><![CDATA[<div><img src="https://static-prod.cdn.newssite.example/wp-content/uploads/2026/11/21/680x453/1795244659-pontesud1.jpg" style="width:100%" class="webfeedsFeaturedVisual"></div>Moltissime persone li attraversano ogni giorno, anche più volte al giorno: la Russia li bombarda proprio per questo]]></description>
+    <wfw:commentRss>https://www.newssite.example/2026/11/21/importanza-ponti-kyiv-attaccati/feed/</wfw:commentRss>
+    <slash:comments>0</slash:comments>
+</item>
+    </channel>
+</rss>

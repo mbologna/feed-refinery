@@ -12,10 +12,14 @@ import pytest
 
 
 class FakeResponse(io.BytesIO):
-    def __init__(self, body: bytes, content_type: str = "text/html; charset=utf-8", url: str = ""):
+    def __init__(
+        self, body: bytes, content_type: str = "text/html; charset=utf-8", url: str = "", headers: dict | None = None
+    ):
         super().__init__(body)
         self.headers = email.message.Message()
         self.headers["Content-Type"] = content_type
+        for name, value in (headers or {}).items():
+            self.headers[name] = value
         self.url = url
 
     def geturl(self) -> str:
@@ -26,12 +30,16 @@ class FakeWeb:
     def __init__(self) -> None:
         self.routes: dict[str, object] = {}
         self.requests: list[str] = []
+        self.sent: list[urllib.request.Request] = []  # the requests themselves, with their headers
 
     def html(self, url: str, body: str, content_type: str = "text/html; charset=utf-8", final_url: str | None = None):
         self.routes[url] = lambda: FakeResponse(body.encode("utf-8"), content_type, final_url or url)
 
     def json(self, url_prefix: str, data: dict):
         self.routes[url_prefix] = lambda: FakeResponse(json.dumps(data).encode(), "application/json", url_prefix)
+
+    def feed(self, url: str, body: bytes, headers: dict | None = None, content_type: str = "application/rss+xml"):
+        self.routes[url] = lambda: FakeResponse(body, content_type, url, headers)
 
     def error(self, url: str, exc: Exception):
         def raise_it():
@@ -45,6 +53,8 @@ class FakeWeb:
     def urlopen(self, req, timeout=None):
         url = req.full_url if isinstance(req, urllib.request.Request) else req
         self.requests.append(url)
+        if isinstance(req, urllib.request.Request):
+            self.sent.append(req)
         # Exact URL first, then the longest matching prefix (API queries carry a timestamp).
         route = self.routes.get(url)
         if route is None:

@@ -4,8 +4,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from conftest import hit
 
-from hackernews_rss.config import Feed
-from hackernews_rss.source import API, FIREBASE, fetch_ranked_ids, fetch_stories, ids_query_urls, parse_hits, query_url
+from feeds.config import Feed
+from feeds.source import API, FIREBASE, fetch_ranked_ids, fetch_stories, ids_query_urls, parse_hits, query_url
 
 NOW = dt.datetime(2026, 11, 19, 12, 0, tzinfo=dt.UTC)
 

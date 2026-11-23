@@ -7,9 +7,9 @@ author: Michele Bologna
 changelog_releases: true
 codecov: false
 coverage_fail_under: 95
-description: Hacker News RSS feeds (front page, 100+ points, top stories, daily digest)
-    whose items carry the linked page's image and excerpt and the top comment, built
-    by GitHub Actions
+description: 'RSS feeds built by GitHub Actions: Hacker News (front page, 100+ points,
+    top stories, daily digest) and any RSS or Atom feed, filtered, merged and enriched
+    with each article''s image and excerpt'
 forge: github
 kind: package
 license: MIT
@@ -17,9 +17,9 @@ main_module: true
 notifications: false
 owned_files:
 - ci
-package_name: hackernews_rss
-project_name: hackernews-rss
+package_name: feeds
+project_name: feeds
 pypi_publish: false
 python_floor: '3.15'
 sample_code: false
-script_target: hackernews_rss.cli:main
+script_target: feeds.cli:main

@@ -2,11 +2,12 @@ import datetime as dt
 import json
 import xml.etree.ElementTree as ET
 from email.utils import format_datetime
+from pathlib import Path
 
 from conftest import FakeResponse, hit
 
-from hackernews_rss import cli
-from hackernews_rss.source import API, FIREBASE
+from feeds import cli
+from feeds.source import API, FIREBASE
 
 PAGE = "https://site.example/"
 CONFIG = """
@@ -219,3 +220,135 @@ def test_a_low_image_rate_warns(tmp_path, web, capsys):
     web.json(FIREBASE + "item/", {"kids": []})
     assert build(config, tmp_path / "out", "--previous-state", "") == 0
     assert "::warning::f.xml: only 0 of 10 items have an image" in capsys.readouterr().out
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+NEWS_SAMPLE_FEED = "https://www.newssite.example/feed"
+ATOM_FEED = "https://blog.example.org/feed.atom"
+RSS_CONFIG = """
+[[rss]]
+file = "newssite.xml"
+title = "News Site: articles"
+source = "https://www.newssite.example/feed"
+exclude_categories = ["peanuts", "foto del giorno", "celebrity"]
+exclude_links = ['^https://www\\.newssite\\.example/(episodes|newsletter)/']
+exclude_titles = ['(?i)^le prime pagine']
+
+[[rss]]
+file = "mixed.xml"
+title = "Mixed"
+sources = ["https://www.newssite.example/feed", "https://blog.example.org/feed.atom"]
+include_categories = ["Mondo", "releases", "Cultura"]
+"""
+TOPICS = "https://www.newssite.example/topics/da-leggere-per-provare-a-capire-lex-ilva-di-taranto/"
+# Items with an image but no text in the source's description.
+NO_TEXT = [
+    "https://www.newssite.example/2026/11/23/morto-senzatetto-tenda-sapienza-roma/",
+    "https://www.newssite.example/flashes/poster-artificial/",
+]
+
+
+def items_of(path):
+    return ET.parse(path).getroot().findall("channel/item")
+
+
+def test_build_rss_feeds_end_to_end(tmp_path, web, capsys):
+    config = tmp_path / "feeds.toml"
+    config.write_text(RSS_CONFIG)
+    web.feed(NEWS_SAMPLE_FEED, (FIXTURES / "newssite.xml").read_bytes(), {"ETag": '"v1"'})
+    web.feed(ATOM_FEED, (FIXTURES / "atom.xml").read_bytes(), content_type="application/atom+xml")
+    web.html(
+        TOPICS, '<head><meta property="og:image" content="/ilva.jpg"><meta name="description" content="Ilva"></head>'
+    )
+    for url in NO_TEXT:
+        web.html(url, '<head><meta property="og:image" content="/og.jpg"><meta name="description" content="OG"></head>')
+    out = tmp_path / "public"
+    now = dt.datetime(2026, 11, 23, 21, 30, tzinfo=dt.UTC)
+
+    cli.build(config, out, PAGE, "", now)
+    log = capsys.readouterr().out
+    assert "newssite.xml: https://www.newssite.example/feed: 12 items, 7 pass the filters" in log
+    assert "mixed.xml: https://blog.example.org/feed.atom: 3 items, 1 pass the filters" in log
+    # One request per source, though two feeds share News Site; one per missing preview.
+    assert web.requests.count(NEWS_SAMPLE_FEED) == 1
+    assert sorted(r for r in web.requests if r not in (NEWS_SAMPLE_FEED, ATOM_FEED)) == sorted([TOPICS, *NO_TEXT])
+    assert "rss previews: fetched 3 new, 0 failed" in log
+
+    newssite = items_of(out / "newssite.xml")
+    assert len(newssite) == 7
+    first = newssite[1]  # after the Bits item at 19:47
+    assert first.findtext("title") == "Cosa dice il film di Chiara Ferragni del “pandorogate”"
+    assert first.findtext("pubDate") == "Mon, 23 Nov 2026 19:01:24 +0000"
+    assert first.findtext("guid") == "https://www.newssite.example/2026/11/23/chiara-ferragni-pandorogate-documentario/"
+    assert [c.text for c in newssite[2].findall("category")] == ["Mondo", "Tecnologia"]
+    topics = next(i for i in newssite if i.findtext("link") == TOPICS)
+    assert '<img src="https://www.newssite.example/ilva.jpg"' in topics.findtext("description")
+    assert "<p>Ilva</p>" in topics.findtext("description")
+    mixed = [i.findtext("title") for i in items_of(out / "mixed.xml")]
+    assert "Release 2.0 is out" in mixed and len(mixed) == 5  # Cultura, Mondo x3 and the release
+
+    health = json.loads((out / "health.json").read_text())
+    stamp = int(now.timestamp())
+    assert health["rss"]["newssite.xml"] == {
+        "items": 7,
+        "images": 7,
+        "excerpts": 7,
+        "ok": True,
+        "last_ok": stamp,
+        "sources_failed": [],
+    }
+    assert health["feeds"] == {} and health["digests"] == {}
+    index = (out / "index.html").read_text()
+    assert "https://site.example/newssite.xml" in index and "Mixed" in index
+
+    # Next run, 4 hours later: News Site is unchanged (a conditional 304), the
+    # blog fails. Nothing is fetched again and the blog's items stay.
+    web.requests.clear()
+    web.sent.clear()
+    web.status(NEWS_SAMPLE_FEED, 304)
+    web.status(ATOM_FEED, 503)
+    later = now + dt.timedelta(hours=4)
+    cli.build(config, tmp_path / "next", PAGE, str(out / "state.json"), later)
+    log = capsys.readouterr().out
+    assert "newssite.xml: https://www.newssite.example/feed: unchanged" in log
+    assert "::warning::mixed.xml: https://blog.example.org/feed.atom: HTTPError: HTTP Error 503" in log
+    assert "rss previews: fetched 0 new, 0 failed" in log
+    assert sorted(web.requests) == [ATOM_FEED, NEWS_SAMPLE_FEED]
+    assert web.sent[0].get_header("If-none-match") == '"v1"'
+    assert len(items_of(tmp_path / "next" / "newssite.xml")) == 7
+    assert "Release 2.0 is out" in [i.findtext("title") for i in items_of(tmp_path / "next" / "mixed.xml")]
+    health = json.loads((tmp_path / "next" / "health.json").read_text())
+    assert health["rss"]["newssite.xml"]["ok"] and health["rss"]["newssite.xml"]["last_ok"] == int(later.timestamp())
+    assert health["rss"]["mixed.xml"]["ok"] is False  # the blog last answered 4 hours ago
+    assert health["rss"]["mixed.xml"]["last_ok"] == stamp
+    assert health["rss"]["mixed.xml"]["sources_failed"] == [ATOM_FEED]
+
+
+def test_a_source_that_never_answered_is_not_ok(tmp_path, web, capsys):
+    config = tmp_path / "feeds.toml"
+    config.write_text('[[rss]]\nfile = "r.xml"\ntitle = "R"\nsource = "https://gone.example/feed"\n')
+    web.status("https://gone.example/feed", 404)
+    cli.build(config, tmp_path / "out", PAGE, "", dt.datetime(2026, 11, 23, tzinfo=dt.UTC))
+    health = json.loads((tmp_path / "out" / "health.json").read_text())
+    assert health["rss"]["r.xml"] == {
+        "items": 0,
+        "images": 0,
+        "excerpts": 0,
+        "ok": False,
+        "last_ok": None,
+        "sources_failed": ["https://gone.example/feed"],
+    }
+    assert items_of(tmp_path / "out" / "r.xml") == []
+
+
+def test_an_rss_feed_with_few_images_warns(tmp_path, web, capsys):
+    config = tmp_path / "feeds.toml"
+    config.write_text('[[rss]]\nfile = "r.xml"\ntitle = "R"\nsource = "https://s.example/feed"\n')
+    body = "".join(f"<item><title>T{n}</title><link>https://s.example/{n}</link></item>" for n in range(10))
+    web.feed("https://s.example/feed", f'<rss version="2.0"><channel><title>S</title>{body}</channel></rss>'.encode())
+    web.status("https://s.example/", 403)
+    cli.build(config, tmp_path / "out", PAGE, "", dt.datetime(2026, 11, 23, tzinfo=dt.UTC))
+    log = capsys.readouterr().out
+    assert "rss previews: fetched 0 new, 10 failed" in log
+    assert "  https://s.example/3: HTTPError: HTTP Error 403" in log
+    assert "::warning::r.xml: only 0 of 10 items have an image" in log
