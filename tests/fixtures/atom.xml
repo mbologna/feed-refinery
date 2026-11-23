@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <title>Example blog</title>
+  <id>tag:blog.example.org,2026:feed</id>
+  <link rel="alternate" href="https://blog.example.org/"/>
+  <updated>2026-11-22T10:00:00Z</updated>
+  <entry>
+    <title type="html">Release &lt;b&gt;2.0&lt;/b&gt; is out</title>
+    <id>tag:blog.example.org,2026:post-2</id>
+    <link rel="alternate" type="text/html" href="/posts/release-2/?utm_source=feed#top"/>
+    <link rel="enclosure" type="image/jpeg" href="https://cdn.example.org/release-2.jpg"/>
+    <published>2026-11-22T09:30:00Z</published>
+    <updated>2026-11-22T10:00:00Z</updated>
+    <author><name>Ada</name></author>
+    <category term="releases"/>
+    <category term="software"/>
+    <summary type="html">&lt;p&gt;What changed in &lt;em&gt;2.0&lt;/em&gt;, and why.&lt;/p&gt;</summary>
+  </entry>
+  <entry>
+    <title>Notes from the meetup</title>
+    <id>tag:blog.example.org,2026:post-1</id>
+    <link rel="alternate" type="text/html" href="https://blog.example.org/posts/meetup/"/>
+    <updated>2026-11-20T18:00:00Z</updated>
+    <author><name>Grace</name></author>
+    <media:thumbnail url="https://cdn.example.org/meetup.jpg"/>
+    <content type="html">&lt;p&gt;We met, we talked.&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <title></title>
+    <id>tag:blog.example.org,2026:note-7</id>
+    <summary>A short note with no title and no link.</summary>
+  </entry>
+</feed>
