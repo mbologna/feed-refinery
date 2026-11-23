@@ -1,4 +1,4 @@
-"""What the previous run published: each story with its preview, and when each feed first saw it.
+"""What the previous run published: each story or item with its preview, and when each feed first saw it.
 
 The state travels with the site. Each run reads state.json from the published
 site and deploys the updated copy next to the feeds, so it needs no commits
@@ -14,19 +14,22 @@ import urllib.error
 import urllib.request
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from . import USER_AGENT
 from .comments import Comment
-from .config import Digest, Feed
+from .config import Digest, Feed, Rss
 from .preview import Preview
+from .rss import Fetched, Item, canonical_link, dedup_key, keep, normal_title
 from .source import Story
 
-VERSION = 1
+VERSION = 2  # 2 added the rss section; a version 1 file loads with it empty
+READABLE = (1, 2)
 MAX_ATTEMPTS = 3  # preview fetches per story before giving up on it
 COMMENT_INTERVAL = 2 * 3600  # how often a listed story's top comment is looked up again
 RETRY_STATUSES = {408, 429}  # client errors worth another try; other 4xx won't change
+RSS_KEEP = 7 * 86400  # how long an item no source lists any more stays in its feed
 
 
 @dataclass
@@ -43,12 +46,55 @@ class Entry:
 
 
 @dataclass
+class Source:
+    """One RSS source of a feed: its validators for the next conditional GET, and when it last answered."""
+
+    etag: str | None = None
+    last_modified: str | None = None
+    last_ok: int | None = None  # Unix time of the last 200 or 304; None = never
+
+
+@dataclass
+class RssEntry:
+    item: Item  # the kept copy, with the categories of every copy
+    first_seen: int  # Unix time the feed first listed the story
+    preview: Preview | None = None  # None until a fetch succeeds, or while the item needs none
+    attempts: int = 0
+    from_sources: list[str] = field(default_factory=list)  # the sources that list it, in the config's order
+
+    @property
+    def sort_key(self) -> tuple[int, int]:
+        return (self.item.published or self.first_seen, self.first_seen)
+
+    @property
+    def image(self) -> str | None:
+        return self.item.image or (self.preview.image if self.preview else None)
+
+    @property
+    def excerpt(self) -> str | None:
+        return self.item.summary or (self.preview.description if self.preview else None)
+
+
+@dataclass
+class RssFeed:
+    sources: dict[str, Source] = field(default_factory=dict)
+    items: dict[str, RssEntry] = field(default_factory=dict)  # dedup key -> entry, newest first
+
+    def last_ok(self, feed: Rss) -> int | None:
+        """The oldest last_ok of the feed's sources: the feed is as fresh as its stalest source."""
+        times = [self.sources[s].last_ok if s in self.sources else None for s in feed.sources]
+        return None if None in times else min(t for t in times if t is not None)
+
+
+@dataclass
 class State:
     stories: dict[str, Entry] = field(default_factory=dict)
     # Feed file -> story id -> Unix time the feed first listed the story.
     feeds: dict[str, dict[str, int]] = field(default_factory=dict)
     # Digest file -> UTC day (YYYY-MM-DD) -> its top story ids, frozen once published.
     digests: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    # RSS feed file -> its sources and items.
+    rss: dict[str, RssFeed] = field(default_factory=dict)
 
     def to_json(self) -> bytes:
         data = {
@@ -65,16 +111,32 @@ class State:
             },
             "feeds": self.feeds,
             "digests": self.digests,
+            "rss": {
+                file: {
+                    "sources": {url: asdict(s) for url, s in feed.sources.items()},
+                    "items": {
+                        key: {
+                            "item": asdict(e.item),
+                            "first_seen": e.first_seen,
+                            "preview": asdict(e.preview) if e.preview else None,
+                            "attempts": e.attempts,
+                            "from_sources": e.from_sources,
+                        }
+                        for key, e in feed.items.items()
+                    },
+                }
+                for file, feed in self.rss.items()
+            },
         }
         return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
     @classmethod
     def from_json(cls, raw: bytes) -> State:
-        """Raises ValueError on anything that isn't a state file of this version."""
+        """Raises ValueError on anything that isn't a state file of a version this code reads."""
         try:
             data = json.loads(raw)
-            if data.get("version") != VERSION:
-                raise ValueError(f"state version {data.get('version')!r}, expected {VERSION}")
+            if data.get("version") not in READABLE:
+                raise ValueError(f"state version {data.get('version')!r}, expected one of {READABLE}")
             stories = {
                 sid: Entry(
                     story=Story(**e["story"]),
@@ -92,9 +154,26 @@ class State:
                 f: {day: [str(sid) for sid in ids] for day, ids in days.items()}
                 for f, days in data.get("digests", {}).items()
             }
+            # Version 2: absent from version 1 files, which had no RSS feeds.
+            rss = {file: _rss_feed(feed) for file, feed in data.get("rss", {}).items()}
         except (AttributeError, KeyError, TypeError) as e:
             raise ValueError(f"malformed state: {e!r}") from e
-        return cls(stories, feeds, digests)
+        return cls(stories, feeds, digests, rss)
+
+
+def _rss_feed(data: dict) -> RssFeed:
+    sources = {url: Source(**s) for url, s in data["sources"].items()}
+    items = {}
+    for key, e in data["items"].items():
+        fields = e["item"]
+        items[key] = RssEntry(
+            item=Item(**{**fields, "categories": tuple(fields["categories"])}),
+            first_seen=int(e["first_seen"]),
+            preview=Preview(**e["preview"]) if e["preview"] is not None else None,
+            attempts=int(e["attempts"]),
+            from_sources=[str(s) for s in e["from_sources"]],
+        )
+    return RssFeed(sources, items)
 
 
 def load(source: str) -> State:
@@ -193,33 +272,148 @@ def update(
     state.stories = {sid: e for sid, e in state.stories.items() if sid in listed}
 
 
-def fetch_previews(state: State, fetch, workers: int = 8) -> tuple[int, list[tuple[str, str]]]:
-    """Fetch the previews still missing. Returns how many succeeded and the (url, error) failures."""
-    todo: list[tuple[Entry, str]] = []
-    for entry in state.stories.values():
-        if not entry.wants_preview:
-            continue
-        if entry.story.url:
-            todo.append((entry, entry.story.url))
+def update_rss(
+    state: State, feeds: Sequence[Rss], results: dict[str, dict[str, Fetched | Exception]], now: int
+) -> None:
+    """Merge this run's fetches into each RSS feed's items, then drop what no feed keeps.
+
+    results maps each feed file to its sources' outcomes: a 200 replaces what
+    the state knows the source lists, a 304 keeps it, and an exception keeps
+    it too while the source's last_ok ages.
+    """
+    kept: dict[str, RssFeed] = {}
+    for feed in feeds:
+        current = state.rss.get(feed.file) or RssFeed()
+        outcomes = results.get(feed.file, {})
+        sources = {url: current.sources.get(url) or Source() for url in feed.sources}
+        listed: list[tuple[str, list[Item]]] = []  # the sources that answered 200, in the config's order
+        for url, source in sources.items():
+            outcome = outcomes.get(url)
+            if isinstance(outcome, Fetched):
+                source.last_ok = now
+                if outcome.status != 304:
+                    source.etag, source.last_modified = outcome.etag, outcome.last_modified
+                    listed.append((url, outcome.items))
+        refreshed = {url for url, _ in listed}
+        items = current.items
+        for entry in items.values():
+            entry.from_sources = [s for s in entry.from_sources if s in sources and s not in refreshed]
+        _merge(feed, items, listed, now)
+        cutoff = now - RSS_KEEP
+        alive = [(k, e) for k, e in items.items() if keep(e.item, feed) and (e.from_sources or e.first_seen >= cutoff)]
+        alive.sort(key=lambda ke: ke[1].sort_key, reverse=True)
+        kept[feed.file] = RssFeed(sources, dict(alive[: feed.max_items]))
+    state.rss = kept
+
+
+def _merge(feed: Rss, items: dict[str, RssEntry], listed: list[tuple[str, list[Item]]], now: int) -> None:
+    """Add the sources' items that pass the filters to items, one entry per story.
+
+    Two items are one story when their canonical links or their guids match,
+    or, with dedupe = "link+title", their normalised titles. The entry already
+    in the state stays; among new ones the earliest published wins, then the
+    source and position order. Every copy adds its categories.
+    """
+    order = {url: n for n, url in enumerate(feed.sources)}
+    by_link = {canonical_link(e.item.link): k for k, e in items.items() if e.item.link}
+    by_guid = {e.item.guid: k for k, e in items.items()}
+    by_title: dict[str, str] = {}
+    titles = feed.dedupe == "link+title"
+    if titles:
+        by_title = {t: k for k, e in items.items() if (t := normal_title(e.item.title))}
+    candidates = [(item, url, n) for url, found in listed for n, item in enumerate(found) if keep(item, feed)]
+    candidates.sort(key=lambda c: (c[0].published is None, c[0].published or 0, order[c[1]], c[2]))
+    for item, url, _ in candidates:
+        link = canonical_link(item.link) if item.link else None
+        title = normal_title(item.title) if titles else ""
+        key = (
+            (by_link.get(link) if link else None)
+            or by_guid.get(item.guid)
+            or (by_title.get(title) if title else None)
+            or (dedup_key(item) if dedup_key(item) in items else None)
+        )
+        if key is None:
+            key = dedup_key(item)
+            entry = items[key] = RssEntry(item, now)
         else:
-            entry.preview = Preview()  # nothing to fetch
+            entry = items[key]
+            categories = entry.item.categories + tuple(c for c in item.categories if c not in entry.item.categories)
+            if item.guid == entry.item.guid:  # the same item again, perhaps edited
+                moved = item.link != entry.item.link
+                entry.item = replace(item, categories=categories)
+                if moved:  # its preview no longer applies, and its key follows the link
+                    entry.preview, entry.attempts = None, 0
+                    if dedup_key(item) not in items:
+                        old, key = key, dedup_key(item)
+                        items[key] = items.pop(old)
+                        for index in (by_link, by_guid, by_title):
+                            index.update({k: key for k, v in index.items() if v == old})
+            else:
+                entry.item = replace(entry.item, categories=categories)
+        if url not in entry.from_sources:
+            entry.from_sources = sorted([*entry.from_sources, url], key=order.__getitem__)
+        if link:
+            by_link.setdefault(link, key)
+        by_guid.setdefault(item.guid, key)
+        if title:
+            by_title.setdefault(title, key)
+
+
+def _fetch_all(todo: dict[str, list], fetch, workers: int) -> tuple[int, list[tuple[str, str]]]:
+    """Fetch each URL's preview once, for every entry (story or RSS item) that wants it."""
     fetched, failed = 0, []
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(fetch, url): (e, url) for e, url in todo}
+        futures = {pool.submit(fetch, url): url for url in todo}
         for future in as_completed(futures):
-            entry, url = futures[future]
+            url = futures[future]
+            entries = todo[url]
             try:
-                entry.preview = future.result()
-                fetched += 1
+                result = future.result()
             # Any error, not only network ones: one odd page must not break
-            # every feed. The story keeps its title and links either way.
+            # every feed. The item keeps its title and links either way.
             except Exception as e:
                 permanent = (
                     isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500 and e.code not in RETRY_STATUSES
                 )
-                entry.attempts = MAX_ATTEMPTS if permanent else entry.attempts + 1
+                for entry in entries:
+                    entry.attempts = MAX_ATTEMPTS if permanent else entry.attempts + 1
                 failed.append((url, f"{type(e).__name__}: {e}"))
+                continue
+            for entry in entries:
+                entry.preview = result
+            fetched += 1
     return fetched, failed
+
+
+def fetch_previews(state: State, fetch, workers: int = 8) -> tuple[int, list[tuple[str, str]]]:
+    """Fetch the stories' previews still missing. Returns how many succeeded and the (url, error) failures."""
+    todo: dict[str, list[Entry]] = {}
+    for entry in state.stories.values():
+        if not entry.wants_preview:
+            continue
+        if entry.story.url:
+            todo.setdefault(entry.story.url, []).append(entry)
+        else:
+            entry.preview = Preview()  # nothing to fetch
+    return _fetch_all(todo, fetch, workers)
+
+
+def fetch_rss_previews(
+    state: State, feeds: Sequence[Rss], fetch, workers: int = 8
+) -> tuple[int, list[tuple[str, str]]]:
+    """Fetch the previews of the enriched feeds' items that lack an image or an excerpt, with the stories' retry rules."""
+    todo: dict[str, list[RssEntry]] = {}
+    for feed in feeds:
+        if not feed.enrich:
+            continue
+        for entry in state.rss.get(feed.file, RssFeed()).items.values():
+            if entry.preview is not None or entry.attempts >= MAX_ATTEMPTS:
+                continue
+            if entry.item.link and not (entry.item.image and entry.item.summary):
+                todo.setdefault(entry.item.link, []).append(entry)
+            else:
+                entry.preview = Preview()  # nothing to fetch, or nothing missing
+    return _fetch_all(todo, fetch, workers)
 
 
 def fetch_comments(
