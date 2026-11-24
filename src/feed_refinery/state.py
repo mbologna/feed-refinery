@@ -14,7 +14,8 @@ import urllib.error
 import urllib.request
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
+from itertools import islice
 from pathlib import Path
 
 from . import USER_AGENT
@@ -36,6 +37,9 @@ RETRY_STATUSES = {408, 429}  # client errors worth another try; other 4xx won't 
 HN_RECHECK = 6 * 3600  # how often a new item's HN points are looked up again
 HN_RECHECK_FOR = 2 * 86400  # for how long after an item first appears: an HN story's points settle in a day
 TEASER = 500  # characters: a source's text shorter than this is a teaser, and the article's page may say more
+# Pages fetched again per build, and per kind of feed, to count the words of
+# a preview fetched before counting began: few enough not to slow a build.
+RECOUNTS = 100
 
 
 @dataclass
@@ -380,7 +384,10 @@ def _fetch_all(todo: dict[str, list], fetch, workers: int) -> tuple[int, list[tu
                     isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500 and e.code not in RETRY_STATUSES
                 )
                 for entry in entries:
-                    entry.attempts = MAX_ATTEMPTS if permanent else entry.attempts + 1
+                    if entry.preview is not None:  # a recount: keep the preview, and don't try again
+                        entry.preview = replace(entry.preview, words=0)
+                    else:
+                        entry.attempts = MAX_ATTEMPTS if permanent else entry.attempts + 1
                 failed.append((url, f"{type(e).__name__}: {e}"))
                 continue
             for entry in entries:
@@ -389,38 +396,61 @@ def _fetch_all(todo: dict[str, list], fetch, workers: int) -> tuple[int, list[tu
     return fetched, failed
 
 
+def _with_recounts(todo: dict[str, list], recount: dict[str, list]) -> dict[str, list]:
+    """todo, plus at most RECOUNTS of the pages to fetch again for their word count."""
+    for url, entries in islice(recount.items(), RECOUNTS):
+        todo.setdefault(url, []).extend(entries)
+    return todo
+
+
 def fetch_previews(state: State, fetch, workers: int = 8) -> tuple[int, list[tuple[str, str]]]:
-    """Fetch the stories' previews still missing. Returns how many succeeded and the (url, error) failures."""
+    """Fetch the stories' previews still missing, and recount some old ones' words.
+
+    Returns how many succeeded and the (url, error) failures.
+    """
     todo: dict[str, list[Entry]] = {}
+    recount: dict[str, list[Entry]] = {}
     for entry in state.stories.values():
-        if not entry.wants_preview:
-            continue
-        if entry.story.url:
-            todo.setdefault(entry.story.url, []).append(entry)
-        else:
-            entry.preview = Preview()  # nothing to fetch
-    return _fetch_all(todo, fetch, workers)
+        url = entry.story.url
+        if entry.wants_preview:
+            if url:
+                todo.setdefault(url, []).append(entry)
+            else:
+                entry.preview = Preview()  # nothing to fetch
+        elif url and entry.preview is not None and entry.preview.words is None:
+            recount.setdefault(url, []).append(entry)
+    return _fetch_all(_with_recounts(todo, recount), fetch, workers)
 
 
 def fetch_rss_previews(
     state: State, feeds: Sequence[Rss], fetch, workers: int = 8
 ) -> tuple[int, list[tuple[str, str]]]:
-    """Fetch the previews of the enriched feeds' items that lack an image or have only a teaser, with the stories' retry rules.
+    """Fetch the previews of the enriched feeds' items, with the stories' retry rules, and recount some old ones' words.
 
-    With exclude_paywalled every item's page is fetched: it says whether the item is paywalled.
+    An item's page is fetched unless its source has the image, more than a
+    teaser and the whole article, whose words give the reading time. With
+    exclude_paywalled every item's page is fetched: it says whether the item
+    is paywalled.
     """
     todo: dict[str, list[RssEntry]] = {}
+    recount: dict[str, list[RssEntry]] = {}
     for feed in feeds:
         if not feed.enrich:
             continue
         for entry in state.rss.get(feed.file, RssFeed()).items.values():
-            if entry.preview is not None or entry.attempts >= MAX_ATTEMPTS:
+            item, link = entry.item, entry.item.link
+            if entry.preview is not None:
+                if link and entry.preview.words is None and item.words is None:
+                    recount.setdefault(link, []).append(entry)
                 continue
-            if entry.item.link and (feed.exclude_paywalled or not entry.item.image or len(entry.item.summary) < TEASER):
-                todo.setdefault(entry.item.link, []).append(entry)
+            if entry.attempts >= MAX_ATTEMPTS:
+                continue
+            complete = item.image and len(item.summary) >= TEASER and item.words
+            if link and (feed.exclude_paywalled or not complete):
+                todo.setdefault(link, []).append(entry)
             else:
                 entry.preview = Preview()  # nothing to fetch, or nothing missing
-    return _fetch_all(todo, fetch, workers)
+    return _fetch_all(_with_recounts(todo, recount), fetch, workers)
 
 
 def fetch_comments(

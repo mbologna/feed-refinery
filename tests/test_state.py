@@ -198,7 +198,7 @@ def test_fetch_previews_retries_transient_errors_and_gives_up_on_permanent_ones(
             "flaky": Entry(story("flaky")),
             "blocked": Entry(story("blocked")),
             "ask": Entry(story("ask", url=None)),
-            "done": Entry(story("done"), Preview(site_name="Done")),
+            "done": Entry(story("done"), Preview(site_name="Done", words=500)),
             "spent": Entry(story("spent"), None, MAX_ATTEMPTS),
         }
     )
@@ -219,6 +219,55 @@ def test_fetch_previews_retries_transient_errors_and_gives_up_on_permanent_ones(
     assert state.stories["ask"].preview == Preview()
     assert state.stories["flaky"].attempts == 1 and state.stories["flaky"].wants_preview
     assert state.stories["blocked"].attempts == MAX_ATTEMPTS and not state.stories["blocked"].wants_preview
+
+
+def test_old_previews_are_fetched_again_for_their_words_a_few_per_build(monkeypatch):
+    monkeypatch.setattr("feed_refinery.state.RECOUNTS", 2)
+    old = {f"o{n}": Entry(story(f"o{n}"), Preview(image=f"https://i.example/{n}.png")) for n in range(3)}
+    state = State(
+        stories={
+            **old,
+            "counted": Entry(story("counted"), Preview(words=0)),
+            "ask": Entry(story("ask", url=None), Preview()),
+            "new": Entry(story("new")),
+        }
+    )
+    asked = []
+
+    def fetch(url):
+        asked.append(url)
+        if url.endswith("/o1"):
+            raise TimeoutError("slow")
+        return Preview(image="https://i.example/fresh.png", words=700)
+
+    fetch_previews(state, fetch)
+    # Every new story, and RECOUNTS old ones; never one already counted or without a page.
+    assert sorted(asked) == ["https://example.com/new", "https://example.com/o0", "https://example.com/o1"]
+    assert state.stories["o0"].preview == Preview(image="https://i.example/fresh.png", words=700)
+    # A failed recount keeps the preview, counted as having no words so it isn't tried again.
+    assert state.stories["o1"].preview == Preview(image="https://i.example/1.png", words=0)
+    assert state.stories["o1"].attempts == 0
+    asked.clear()
+    fetch_previews(state, fetch)
+    assert asked == ["https://example.com/o2"]
+
+
+def test_rss_items_are_fetched_for_their_words_and_old_ones_recounted():
+    full = "Text. " * (TEASER // 5)
+    counted = RssEntry(item(1, image="https://i.example/1.png", summary=full, words=900), NOW)
+    uncounted = RssEntry(item(2, image="https://i.example/2.png", summary=full), NOW)
+    old = RssEntry(item(3, image="https://i.example/3.png", summary=full), NOW, Preview())
+    state = rss_state(counted, uncounted, old)
+    asked = []
+
+    def fetch(url):
+        asked.append(url)
+        return Preview(words=1200)
+
+    assert fetch_rss_previews(state, [NEWS], fetch) == (2, [])
+    assert sorted(asked) == ["https://news.example/2", "https://news.example/3"]
+    assert counted.preview == Preview() and counted.words == 900  # the source's whole article
+    assert uncounted.words == old.words == 1200
 
 
 def test_rate_limits_are_retried():
@@ -563,7 +612,7 @@ def test_rss_previews_fill_what_the_source_lacks_and_are_never_refetched():
     full = "Text. " * (TEASER // 5)
     bare = RssEntry(item(1), NOW)
     no_text = RssEntry(item(2, image="https://i.example/2.png"), NOW)
-    complete = RssEntry(item(3, image="https://i.example/3.png", summary=full), NOW)
+    complete = RssEntry(item(3, image="https://i.example/3.png", summary=full, words=900), NOW)
     no_link = RssEntry(item(4, link=None, guid="n4"), NOW)
     teaser = RssEntry(item(5, image="https://i.example/5.png", summary="Just a teaser."), NOW)
     state = rss_state(bare, no_text, complete, no_link, teaser)
@@ -571,7 +620,8 @@ def test_rss_previews_fill_what_the_source_lacks_and_are_never_refetched():
 
     def fetch(url):
         asked.append(url)
-        return Preview(image="https://og.example/i.png", description="The article's opening, longer than a teaser.")
+        opening = "The article's opening, longer than a teaser."
+        return Preview(image="https://og.example/i.png", description=opening, words=300)
 
     fetched, failed = fetch_rss_previews(state, [NEWS], fetch)
     assert (fetched, failed) == (3, [])
