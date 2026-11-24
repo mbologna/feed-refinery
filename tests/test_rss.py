@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from feeds import USER_AGENT, rss
-from feeds.config import JsonFields, Rss
-from feeds.rss import (
+from feed_refinery import USER_AGENT, rss
+from feed_refinery.config import JsonFields, Rss
+from feed_refinery.rss import (
     Drop,
     Fetched,
     Item,

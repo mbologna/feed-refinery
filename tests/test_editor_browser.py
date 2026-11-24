@@ -61,14 +61,14 @@ class Quiet(SimpleHTTPRequestHandler):
 def site(tmp_path_factory):
     """The editor and its wheel, served as the site publishes them, under /editor/."""
     root = tmp_path_factory.mktemp("site")
-    shutil.copytree(ROOT / "src/feeds/site/editor", root / "editor")
-    shutil.copy(ROOT / "src/feeds/site/favicon.svg", root / "editor")
+    shutil.copytree(ROOT / "src/feed_refinery/site/editor", root / "editor")
+    shutil.copy(ROOT / "src/feed_refinery/site/favicon.svg", root / "editor")
     wheel = os.environ.get("FEEDS_WHEEL")
     if not wheel:
         dist = tmp_path_factory.mktemp("dist")
         subprocess.run(["uv", "build", "--wheel", "--quiet", "-o", str(dist)], cwd=ROOT, check=True)
-        wheel = str(next(dist.glob("feeds-*.whl")))
-    shutil.copy(wheel, root / "editor/feeds.whl")
+        wheel = str(next(dist.glob("feed_refinery-*.whl")))
+    shutil.copy(wheel, root / "editor/feed_refinery.whl")
     # As the CI build job publishes it.
     export = ["uv", "export", "--frozen", "--only-group", "pyodide", "--no-hashes", "--no-annotate", "--no-header"]
     pins = subprocess.run(export, cwd=ROOT, check=True, capture_output=True, text=True).stdout
@@ -106,7 +106,7 @@ class GitHub:
             ("POST", "/repos/mbologna/feeds-config/pulls"): {
                 "number": 42,
                 "node_id": "PR_node",
-                "html_url": "https://github.com/mbologna/feeds/pull/42",
+                "html_url": "https://github.com/mbologna/feed-refinery/pull/42",
             },
             ("GET", "/repos/mbologna/feeds-config/pulls/42"): {
                 "merged": True,

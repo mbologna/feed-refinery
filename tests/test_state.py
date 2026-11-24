@@ -6,12 +6,12 @@ from dataclasses import replace
 import pytest
 from conftest import FakeResponse
 
-from feeds.comments import Comment
-from feeds.config import Digest, Feed, Rss
-from feeds.preview import Preview
-from feeds.rss import Fetched, Item
-from feeds.source import Story
-from feeds.state import (
+from feed_refinery.comments import Comment
+from feed_refinery.config import Digest, Feed, Rss
+from feed_refinery.preview import Preview
+from feed_refinery.rss import Fetched, Item
+from feed_refinery.source import Story
+from feed_refinery.state import (
     COMMENT_INTERVAL,
     HN_RECHECK,
     HN_RECHECK_FOR,

@@ -1,7 +1,7 @@
 import pytest
 
-from feeds.comments import Comment, fetch_top_comment
-from feeds.source import FIREBASE
+from feed_refinery.comments import Comment, fetch_top_comment
+from feed_refinery.source import FIREBASE
 
 
 def test_first_live_comment_wins(web):
