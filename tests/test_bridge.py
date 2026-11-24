@@ -250,3 +250,39 @@ def test_set_on_an_empty_table():
         "diff": bridge.diff("[[digest]]\n", '[[digest]]\nfile = "d.xml"\ntitle = "D"\n'),
         "error": None,
     }
+
+
+JSON_MAP = {"items": "results", "title": "title", "link": "url", "date": "date", "date_format": "%B %d, %Y"}
+BLOG = "https://blog.example/api/posts"
+
+
+def test_set_writes_json_as_an_inline_table():
+    edits = [{"op": "set", "kind": "rss", "index": 0, "key": "json", "value": {"items": "posts", "title": "t"}}]
+    text = bridge.apply(CONFIG, edits)["text"]
+    assert '\njson = {items = "posts", title = "t"}\n' in text
+    added = [{"op": "add", "kind": "rss", "table": {"file": "b.xml", "title": "B", "source": BLOG, "json": JSON_MAP}}]
+    result = bridge.apply(CONFIG, added)
+    assert result["error"] is None
+    assert (
+        'json = {items = "results", title = "title", link = "url", date = "date", date_format = "%B %d, %Y"}'
+        in (result["text"])
+    )
+
+
+def test_preview_reads_a_json_source():
+    table = {"file": "b.xml", "title": "B", "source": BLOG, "json": JSON_MAP}
+    body = json.dumps(
+        {"results": [{"title": "Hello", "url": "/blog/hello/", "date": "November 23, 2026"}, {"title": "No link"}]}
+    ).encode()
+    result = bridge.preview(table, {BLOG: {"body": body, "content_type": "application/json", "url": BLOG}}, NOW)
+    assert result["sources"] == {BLOG: {"items": 1, "error": None}}
+    assert result["stories"] == [
+        {
+            "key": "https://blog.example/blog/hello",
+            "title": "Hello",
+            "link": "https://blog.example/blog/hello/",
+            "sources": [BLOG],
+        }
+    ]
+    broken = bridge.preview(table, {BLOG: {"body": b"<html>", "content_type": "text/html", "url": BLOG}}, NOW)
+    assert broken["sources"][BLOG]["error"].startswith("not JSON")

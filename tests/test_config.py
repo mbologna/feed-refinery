@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from feeds.config import ConfigError, Digest, Feed, Rss, load, parse
+from feeds.config import ConfigError, Digest, Feed, JsonFields, Rss, load, parse
 
 REPO_CONFIG = Path(__file__).parent.parent / "feeds.toml"
 
@@ -240,3 +240,26 @@ def test_filters_key_follows_the_filters_only():
     text = parse(RSS + 'source = "https://a.example/"\nexclude_titles = ["^A", "^B"]\nexclude_text = ["x"]\n').rss[0]
     assert base.filters_key == same.filters_key  # order and non-filter options don't count
     assert len({base.filters_key, other.filters_key, text.filters_key}) == 3
+
+
+def test_rss_json_source():
+    (feed,) = parse(
+        RSS + 'source = "https://a.example/api"\njson = { items = "data.posts", title = "t", link = "u", date = "d" }\n'
+    ).rss
+    assert feed.json == JsonFields(items="data.posts", title="t", link="u", date="d")
+    assert parse(RSS + 'source = "https://a.example/"\n').rss[0].json is None
+
+
+@pytest.mark.parametrize(
+    ("json_value", "message"),
+    [
+        ('"posts"', "json must be a table"),
+        ('{ items = "p", title = "t" }', "json: missing link"),
+        ('{ items = "p", title = "t", link = "u", body = "b" }', "json: unknown keys: body"),
+        ('{ items = "p", title = "t", link = "" }', "json: link must be a non-empty string"),
+        ('{ items = "p", title = "t", link = "u", date_format = "YYYY" }', "json: date_format must be a strptime"),
+    ],
+)
+def test_bad_json_sources_fail_with_a_message(json_value, message):
+    with pytest.raises(ConfigError, match=message):
+        parse(RSS + f'source = "https://a.example/api"\njson = {json_value}\n')

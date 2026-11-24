@@ -51,6 +51,20 @@ class Digest:
 
 
 @dataclass(frozen=True)
+class JsonFields:
+    """Where a JSON source keeps its items and each item's fields: dotted paths, such as "data.posts"."""
+
+    items: str  # the list of items, from the document's root
+    title: str  # the rest from each item
+    link: str
+    date: str | None = None
+    date_format: str | None = None  # a strptime pattern; ISO 8601 or Unix seconds when unset
+    summary: str | None = None
+    author: str | None = None
+    image: str | None = None
+
+
+@dataclass(frozen=True)
 class Rss:
     """Items from one or more RSS or Atom feeds, filtered, merged and enriched."""
 
@@ -79,6 +93,7 @@ class Rss:
     # Hide items whose link was a story of the [[feed]] tables (see state.check_hacker_news).
     exclude_on_hacker_news: bool = False
     keep_days: int = 7  # how long an item no source lists any more stays
+    json: JsonFields | None = None  # the sources are JSON documents, not RSS or Atom
 
     @property
     def filters_key(self) -> str:
@@ -226,8 +241,31 @@ def _parse_rss(where: str, table: dict, used: list[str]) -> Rss:
         if table["dedupe"] not in DEDUPE:
             raise ConfigError(f"{where}: dedupe must be one of: {', '.join(repr(d) for d in DEDUPE)}")
         options["dedupe"] = table["dedupe"]
+    if "json" in table:
+        options["json"] = _parse_json_fields(where, table["json"])
     _check_file(where, table["file"], used)
     return Rss(file=table["file"], title=table["title"], sources=tuple(sources), **options)
+
+
+JSON_KNOWN = {f.name for f in fields(JsonFields)}
+JSON_REQUIRED = ("items", "title", "link")
+
+
+def _parse_json_fields(where: str, value: object) -> JsonFields:
+    if not isinstance(value, dict):
+        raise ConfigError(f'{where}: json must be a table such as {{ items = "posts", title = "title", link = "url" }}')
+    unknown = set(value) - JSON_KNOWN
+    if unknown:
+        raise ConfigError(f"{where}: json: unknown keys: {', '.join(sorted(unknown))}")
+    missing = [k for k in JSON_REQUIRED if k not in value]
+    if missing:
+        raise ConfigError(f"{where}: json: missing {', '.join(missing)}")
+    for key, path in value.items():
+        if not isinstance(path, str) or not path.strip():
+            raise ConfigError(f"{where}: json: {key} must be a non-empty string")
+    if "date_format" in value and "%" not in value["date_format"]:
+        raise ConfigError(f'{where}: json: date_format must be a strptime pattern such as "%B %d, %Y"')
+    return JsonFields(**value)
 
 
 def parse(text: str) -> Config:
