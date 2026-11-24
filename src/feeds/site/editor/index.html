@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
     <title>Feeds editor</title>
-    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="editor.css" />
     <script type="module" src="editor.js"></script>
   </head>
@@ -22,9 +22,9 @@
     <section id="sign-in" class="panel sign-in" aria-labelledby="sign-in-title" hidden>
       <h2 id="sign-in-title">Sign in with a GitHub token</h2>
       <p>
-        Paste a <a href="https://github.com/settings/personal-access-tokens/new">fine-grained token</a> for the
-        repository <code>mbologna/feeds</code> only, with <b>Contents</b> and <b>Pull requests</b>
-        read and write. It stays in this browser, for this site only.
+        Paste a <a href="https://github.com/settings/personal-access-tokens/new">fine-grained token</a> for the private
+        repository <code>mbologna/feeds-config</code> only, with <b>Contents</b> and <b>Pull requests</b> read and
+        write. It stays in this browser, for this site only.
       </p>
       <form id="token-form">
         <label for="token">Token</label>
@@ -70,8 +70,8 @@
       <form id="save-form" method="dialog">
         <h2 id="save-title">Save to GitHub</h2>
         <p>
-          The change goes through a pull request that merges itself once the checks pass, then the next build publishes
-          it.
+          The change goes through a pull request that merges once its check passes; the merge starts the build that
+          publishes it.
         </p>
         <h3>feeds.toml</h3>
         <pre id="diff" class="diff" tabindex="0" aria-label="Changes to feeds.toml"></pre>

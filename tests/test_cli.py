@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from email.utils import format_datetime
 from pathlib import Path
 
+import pytest
 from conftest import FakeResponse, hit
 
 from feeds import cli
@@ -513,3 +514,92 @@ def test_source_titles_label_each_sources_items_before_the_filters(tmp_path, web
     assert sorted(i.findtext("title") for i in items_of(tmp_path / "out" / "r.xml")) == ["Alpha v2.15.3", "Beta v1.0"]
     assert [i.findtext("title") for i in items_of(tmp_path / "out" / "plain.xml")] == ["v2.15.3"]
     assert web.requests.count(a) == 1
+
+
+def test_quiet_build_prints_totals_only(tmp_path, web, capsys):
+    now = dt.datetime.now(dt.UTC)
+    config = setup(tmp_path, web, now)
+    out = tmp_path / "public"
+    assert build(config, out, "--previous-state", "", "--quiet") == 0
+    log = capsys.readouterr()
+    assert log.out == "built 2 HN feeds, 0 digests, 0 RSS feeds: 4 items, 0 stale\n"
+    assert log.err == ""
+    assert (out / "frontpage.xml").exists()
+
+
+def test_quiet_build_hides_warnings_and_errors(tmp_path, web, capsys, monkeypatch):
+    config = tmp_path / "feeds.toml"
+    config.write_text('[[rss]]\nfile = "secret.xml"\ntitle = "R"\nsource = "https://private.example/feed"\n')
+    web.status("https://private.example/feed", 503)
+    assert build(config, tmp_path / "out", "--previous-state", "", "--quiet") == 0
+    log = capsys.readouterr()
+    assert "private.example" not in log.out + log.err and "secret.xml" not in log.out + log.err
+    assert "::warning::1 warning; the details stay out of this log" in log.out
+
+    def boom(*args):
+        raise RuntimeError("https://private.example/feed broke")
+
+    monkeypatch.setattr(cli, "build", boom)
+    assert build(config, tmp_path / "out", "--quiet") == 1
+    log = capsys.readouterr()
+    assert log.err == "build failed: RuntimeError\n" and log.out == ""
+
+    config.write_text('[[rss]]\nfile = "secret.xml"\ntitle = "R"\nsource = "https://private.example/feed"\nnope = 1\n')
+    monkeypatch.undo()
+    assert build(config, tmp_path / "out", "--quiet") == 2
+    assert capsys.readouterr().err == "feeds.toml is invalid: run check-config on it\n"
+
+
+KV_BASE = "https://api.cloudflare.com/client/v4/accounts/acct/storage/kv/namespaces/ns1"
+
+
+@pytest.fixture
+def kv_env(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "acct")
+    monkeypatch.setenv("CLOUDFLARE_KV_NAMESPACE", "ns1")
+    monkeypatch.setenv("CLOUDFLARE_KV_TOKEN", "t")
+
+
+def test_kv_get_copies_a_key_or_says_it_is_missing(tmp_path, web, kv_env, capsys):
+    web.html(f"{KV_BASE}/values/state.json", '{"version": 3}', "application/octet-stream")
+    target = tmp_path / "previous.json"
+    assert cli.main(["kv-get", "state.json", str(target)]) == 0
+    assert target.read_text() == '{"version": 3}'
+    web.status(f"{KV_BASE}/values/state.json", 404)
+    target.unlink()
+    assert cli.main(["kv-get", "state.json", str(target)]) == 0
+    assert not target.exists()
+    assert capsys.readouterr().out.endswith("state.json: not in KV\n")
+    web.status(f"{KV_BASE}/values/state.json", 403)
+    assert cli.main(["kv-get", "state.json", str(target)]) == 1
+    assert capsys.readouterr().err == "kv-get failed: KV get: HTTP 403\n"
+
+
+def test_kv_publish_prints_counts(tmp_path, web, kv_env, capsys):
+    config = tmp_path / "feeds.toml"
+    config.write_text(CONFIG)
+    out = tmp_path / "public"
+    out.mkdir()
+    for name in ("frontpage.xml", "best.xml"):
+        (out / name).write_text("<rss><channel></channel></rss>")
+    (out / "state.json").write_text("{}")
+    (out / "health.json").write_text('{"built": 1}')
+    web.status(f"{KV_BASE}/keys", 403)
+    assert cli.main(["kv-publish", str(out), "--config", str(config)]) == 1
+    assert capsys.readouterr().err == "publish failed: KV list: HTTP 403\n"
+    web.json(f"{KV_BASE}/keys", {"result": [], "result_info": {}})
+    web.status(f"{KV_BASE}/values/health.json", 404)
+    web.routes[f"{KV_BASE}/values/"] = lambda: FakeResponse(b'{"success": true}', "application/json")
+    del web.routes[f"{KV_BASE}/values/health.json"]
+    assert cli.main(["kv-publish", str(out), "--config", str(config)]) == 0
+    assert capsys.readouterr().out == "kv: 4 written, 0 unchanged, 0 deleted; 4 of 1000 writes today\n"
+
+
+def test_kv_publish_without_credentials_fails(tmp_path, monkeypatch, capsys):
+    for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_KV_NAMESPACE", "CLOUDFLARE_KV_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    config = tmp_path / "feeds.toml"
+    config.write_text(CONFIG)
+    assert cli.main(["kv-publish", str(tmp_path), "--config", str(config)]) == 1
+    assert "publish failed: set CLOUDFLARE_ACCOUNT_ID" in capsys.readouterr().err
+    assert cli.main(["kv-get", "state.json", str(tmp_path / "x")]) == 1

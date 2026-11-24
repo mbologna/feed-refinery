@@ -1,18 +1,19 @@
 name: CI
 
-# Tests on every push and pull request, with a check of feeds.toml and a
-# browser test of the web editor. On main (a push or a dispatch) the build then
-# fetches the stories and their previews, and publishes the feeds and the
-# editor on GitHub Pages.
+# Tests on every push and pull request, with a check of the example
+# feeds.toml and a browser test of the web editor. On main (a push or a
+# dispatch) the build then reads the private feeds.toml, fetches the stories
+# and their previews, and writes the feeds to Workers KV; the editor alone goes
+# to GitHub Pages.
 #
 # Every 30 minutes a Cloudflare Worker's Cron Trigger (configured in a
-# private repository) dispatches this workflow with build_only: GitHub's
-# own schedule ran hours
-# late, or not at all, while a dispatch starts at once. Those runs skip the
-# tests, which already passed on the push that put the code on main.
+# private repository) dispatches this workflow with build_only, and so does a
+# change to the private feeds.toml: GitHub's own schedule ran hours late, or
+# not at all, while a dispatch starts at once. Those runs skip the tests,
+# which already passed on the push that put the code on main.
 #
-# The previous run's state.json comes from the published site itself, so the
-# workflow needs no commits and no cache.
+# The previous run's state.json comes from KV, so the workflow needs no
+# commits and no cache.
 #
 # GitHub's Monday schedule runs the tests and the build too, and cuts the
 # weekly release (auto-release); a late or skipped run only delays it.
@@ -47,8 +48,8 @@ jobs:
       enable_codecov: false
     secrets: inherit
 
-  # The build's own validation of feeds.toml, which the editor's pull
-  # requests change.
+  # The build's own validation of the example feeds.toml. The real one is
+  # private: mbologna/feeds-config checks its own changes the same way.
   config:
     name: Check feeds.toml
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.build_only) }}
@@ -65,8 +66,8 @@ jobs:
           version: "0.13.8"
           python-version: "3.15"
 
-      - name: Check feeds.toml
-        run: uv run --locked --no-dev feeds check-config feeds.toml
+      - name: Check the example feeds.toml
+        run: uv run --locked --no-dev feeds check-config examples/feeds.toml
 
   # The web editor in Chromium: Pyodide from jsDelivr and the packages from
   # PyPI, the wheel built here, GitHub and the source relay mocked. The
@@ -109,8 +110,12 @@ jobs:
       dispatch_tag_build: false
     secrets: inherit
 
+  # The feeds: built from the private feeds.toml of mbologna/feeds-config
+  # (checked out with a read-only deploy key) and written to Workers KV, which
+  # the feeds Worker serves behind a token. This log is public, so the build
+  # prints totals only, and nothing of the feeds goes to Pages or an artifact.
   build:
-    name: Build feeds
+    name: Build and publish the feeds
     needs: python
     # needs alone would skip the build whenever the tests are skipped.
     if: >-
@@ -122,6 +127,48 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_KV_NAMESPACE: ${{ vars.CLOUDFLARE_KV_NAMESPACE }}
+      CLOUDFLARE_KV_TOKEN: ${{ secrets.CLOUDFLARE_KV_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check out the private feeds.toml
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: mbologna/feeds-config
+          ssh-key: ${{ secrets.FEEDS_CONFIG_DEPLOY_KEY }}
+          path: config
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.8"
+          python-version: "3.15"
+
+      - name: Read the previous state
+        run: uv run --locked --no-dev feeds kv-get state.json previous-state.json
+
+      - name: Build
+        run: >-
+          uv run --locked --no-dev feeds build --quiet --config config/feeds.toml
+          --previous-state previous-state.json --output-dir public
+
+      - name: Publish to KV
+        run: uv run --locked --no-dev feeds kv-publish public --config config/feeds.toml
+
+  # The web editor at /editor/, alone on Pages: its files, the feeds wheel it
+  # runs in the browser, and the locked versions of the packages that wheel
+  # needs from PyPI. tests/test_editor_browser.py assembles it the same way.
+  editor-site:
+    name: Assemble the editor
+    if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -131,28 +178,24 @@ jobs:
           version: "0.13.8"
           python-version: "3.15"
 
-      - name: Build
-        run: uv run --locked --no-dev feeds build --output-dir public
-
-      # The web editor at /editor/: its files, the feeds wheel it runs in
-      # the browser, and the locked versions of the packages that wheel
-      # needs from PyPI. tests/test_editor_browser.py assembles it the same way.
-      - name: Add the editor
+      - name: Assemble the editor
         run: |
           set -euo pipefail
-          cp -R src/feeds/site/editor public/editor
+          mkdir site
+          cp -R src/feeds/site/editor site/editor
+          cp src/feeds/site/favicon.svg site/editor/
           uv build --wheel --out-dir dist
-          cp dist/feeds-*.whl public/editor/feeds.whl
-          uv export --frozen --only-group pyodide --no-hashes --no-annotate --no-header > public/editor/requirements.txt
+          cp dist/feeds-*.whl site/editor/feeds.whl
+          uv export --frozen --only-group pyodide --no-hashes --no-annotate --no-header > site/editor/requirements.txt
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: public
+          path: site
 
   deploy:
-    name: Deploy to GitHub Pages
-    needs: build
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    name: Deploy the editor to GitHub Pages
+    needs: editor-site
+    if: ${{ !cancelled() && needs.editor-site.result == 'success' }}
     runs-on: ubuntu-26.04
     permissions:
       pages: write
@@ -169,21 +212,13 @@ jobs:
 
   freshness:
     name: Check the published feeds
-    needs: deploy
-    # Also runs when an earlier job failed, so a broken build or deploy shows
-    # up as stale feeds once it has gone on for over 3 hours.
+    needs: build
+    # Also runs when the build failed, so a broken build shows up as stale
+    # feeds once it has gone on for over 3 hours. /health counts problems and
+    # never names a feed.
     if: ${{ !cancelled() && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-26.04
-    permissions:
-      contents: read
+    permissions: {}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: "0.13.8"
-          python-version: "3.15"
-
-      - name: Fail if a published feed is missing or older than 3 hours
-        run: uv run --locked --no-dev feeds check --max-age-hours 3
+      - name: Fail if the feeds' /health is down
+        run: curl -fsS --retry 2 https://feeds.michelebologna.net/health

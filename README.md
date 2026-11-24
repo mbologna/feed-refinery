@@ -8,14 +8,7 @@ RSS feeds whose items carry each article's image and excerpt, from two kinds of 
 - **Hacker News:** the front page, stories with 100+ points, ranked stories and a daily digest, each item with the linked page's image and excerpt, the top comment and the article and comments links. [hnrss](https://github.com/hnrss/hnrss) gives you only the links.
 - **Any RSS or Atom feed:** one site's feed, or several merged into one with duplicates removed, filtered by category, title, link and author, with the article's image and excerpt filled in where the source lacks them.
 
-This repo builds the feeds with a scheduled GitHub Actions workflow and publishes them as static files on GitHub Pages.
-
-**Subscribe:** <https://feeds.michelebologna.net/>
-
-The feeds are published on GitHub Pages and served at `feeds.michelebologna.net` by a Cloudflare Worker, so the URLs above keep working wherever the files are hosted. `https://feeds.michelebologna.net/health` answers 200 `{"status":"ok",…}`, or 503 when the last build is over 3 hours old or a feed's items mostly lack an image.
-
-| Feed | URL |
-| --- | --- |
+It's an engine: it builds whatever feeds a `feeds.toml` lists, and [`examples/feeds.toml`](examples/feeds.toml) shows every kind. This repository's workflow builds a private list (its `feeds.toml` lives in a private repository, since it shows what someone reads) every 30 minutes, writes the feeds to Cloudflare Workers KV, and a Worker serves them at `https://feeds.michelebologna.net/<file>.xml?token=…`: a missing or wrong token is a 404, so nobody can tell which feeds exist. `https://feeds.michelebologna.net/health` answers 200 `{"status":"ok",…}`, or 503 with the problems counted, never named. [Run it yourself](#run-it-yourself), with a public or a private list.
 
 ## Hacker News items
 
@@ -48,7 +41,7 @@ The article page is fetched only for an item whose source lacks the image or the
 
 ## Feeds
 
-[`feeds.toml`](feeds.toml) lists the feeds. Each `[[feed]]` table publishes an HN feed:
+A `feeds.toml` lists the feeds; [`examples/feeds.toml`](examples/feeds.toml) has one of each kind, with every key described. Each `[[feed]]` table publishes an HN feed:
 
 - `file`: the published file name, ending in `.xml`.
 - `title`: the feed's title.
@@ -57,7 +50,7 @@ The article page is fetched only for an item whose source lacks the image or the
 - `window_hours`: how long a story stays in the feed after it first appeared there (default 48). A story the API still returns for the feed stays however old it is: Algolia's `front_page` tag sometimes lists stories posted days ago.
 - `max_items`: the most items the feed holds (default 150).
 - `ranked`: `true` keeps only stories in HN's current ranking, the ~500 ids of [`topstories.json`](https://github.com/HackerNews/API#new-top-and-best-stories), at any age (default `false`). This is the list [hackernewsbot](https://github.com/phil-r/hackernewsbot) reads; with `min_points = 150`, `top.xml` holds the stories it posts. The bot posts at most one story per 10 minutes; a feed doesn't need that limit.
-- `exclude_titles`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax); a story whose title matches one never enters the feed. The feeds here drop `^Launch HN:`, YC companies announcing a product.
+- `exclude_titles`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax); a story whose title matches one never enters the feed, such as `^Launch HN:`, YC companies announcing a product.
 - `site`: the website the feed is about (default `https://news.ycombinator.com/`). It is the channel's `<link>`, which Feedly takes a feed's icon from, so each feed shows its source's icon rather than one shared by every feed here.
 - `icon`: the channel's `<image>`, for readers that show it (default the site's `/favicon.ico`).
 
@@ -77,53 +70,59 @@ Each `[[rss]]` table publishes items from other feeds:
 - `source`: the URL of an RSS or Atom feed; or `sources`, a list of them, merged into one feed. A table has one or the other.
 - `json`: for a site with no feed, whose page loads its posts from a JSON API: the sources are JSON documents, and this inline table says where the items are. `items` is the dotted path to the list (`"results"`, `"data.posts"`); `title` and `link`, and optionally `date`, `summary`, `author` and `image`, are paths within each item. `date_format` is a [strptime pattern](https://docs.python.org/3/library/datetime.html#format-codes) for the date; without one, ISO 8601 or Unix seconds. Links resolve against the source's URL, a date without a time is its midnight UTC, and an item without a title or a link is skipped. Filters, merging and enrichment work as for RSS.
 - `include_categories`, `exclude_categories`: categories, matched against the whole category, ignoring case.
-- `include_sections`, `exclude_sections`: sections, matched like categories but only against the item's first category, for sites that list the section first and then free-form tags reusing section names. Check the site first: Tech Site lists categories alphabetically, so there the section is in the URL and `exclude_links` is the filter to use.
+- `include_sections`, `exclude_sections`: sections, matched like categories but only against the item's first category, for sites that list the section first and then free-form tags reusing section names. Check the site first: a feed that lists categories alphabetically has no section first, and the URL path (`exclude_links`) is the filter to use.
 - `include_titles`, `exclude_titles`, `include_links`, `exclude_links`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax), each searched anywhere in the item's title or link. Start one with `(?i)` to ignore case.
 - `exclude_authors`: authors, matched against the whole name, ignoring case.
 - `exclude_text`: regular expressions searched in the item's title and the source's whole description, as plain text, when the item first appears. For example, a vendor's studies "sponsored by" it whose titles don't say so.
 - `enrich`: `false` skips fetching article pages, so items carry only what the source gives (default `true`).
-- `exclude_paywalled`: `true` fetches every item's page and hides the items whose [JSON-LD](https://developers.google.com/search/docs/appearance/structured-data/paywalled-content) says `"isAccessibleForFree": false`, anywhere in the page's structured data (default `false`; needs `enrich`). An item is held back until its page has been read, so a paywalled one never shows for a build; one whose page fails three times shows. A page without the marker counts as free. News Site marks its newsletters this way, so one it makes free gets in by itself.
-- `exclude_on_hacker_news`: `true` hides the items whose link was a story in the HN feeds: one the front page, best or top feeds hold, or one HN gave at least the lowest `min_points` of the `[[feed]]` tables (100 here), looked up in Algolia by URL. The lookup runs when an item appears and every 6 hours for its first 2 days, while a story's points still grow; a failed one leaves the item shown and is retried on the next build (default `false`).
-- `site`, `icon`: as for an HN feed; `site` defaults to the first source's site (its scheme and host). Set it when that host isn't the site readers know (`feeds.techsite.example`, `github.com`), and `icon` when the site's `/favicon.ico` is missing or wrong.
-- `source_titles`: a `[rss.source_titles]` table of source URL = label. The label goes in front of the titles of that source's items, unless a title already starts with it, before the filters see them: a GitHub release feed titles its items with a bare version (`v2.15.3`), so a feed merging several products needs `Alpha v2.15.3`. The editor has no field for it: edit it in the file.
+- `exclude_paywalled`: `true` fetches every item's page and hides the items whose [JSON-LD](https://developers.google.com/search/docs/appearance/structured-data/paywalled-content) says `"isAccessibleForFree": false`, anywhere in the page's structured data (default `false`; needs `enrich`). An item is held back until its page has been read, so a paywalled one never shows for a build; one whose page fails three times shows. A page without the marker counts as free. News sites mark their subscriber-only newsletters this way, so one made free gets in by itself.
+- `exclude_on_hacker_news`: `true` hides the items whose link was a story in the HN feeds: one the front page, best or top feeds hold, or one HN gave at least the lowest `min_points` of the `[[feed]]` tables (100 when none sets one), looked up in Algolia by URL. The lookup runs when an item appears and every 6 hours for its first 2 days, while a story's points still grow; a failed one leaves the item shown and is retried on the next build (default `false`).
+- `site`, `icon`: as for an HN feed; `site` defaults to the first source's site (its scheme and host). Set it when that host isn't the site readers know (a `feeds.` host, `github.com`), and `icon` when the site's `/favicon.ico` is missing or wrong.
+- `source_titles`: a `[rss.source_titles]` table of source URL = label. The label goes in front of the titles of that source's items, unless a title already starts with it, before the filters see them: a GitHub release feed titles its items with a bare version (`v2.15.3`), so a feed merging several projects needs `Alpha v2.15.3`. The editor has no field for it: edit it in the file.
 - `max_items`: the most items the feed holds, newest first by the source's dates (default 100).
 - `keep_days`: how long an item stays once no source lists it (default 7), below.
 - `dedupe`: `"link"` (default) or `"link+title"`, below.
 
 The filters apply in two steps. The includes come first: an item must match every include list the table sets, any entry of each. The excludes then drop an item that matches any entry of any exclude list. Changing a filter applies to the items the feed already holds on the next build.
 
-News Site's feed, as published here:
+A news site's feed without its comic strip, its podcasts, its ticketed events and its paywalled newsletters:
 
 ```toml
 [[rss]]
-file = "newssite.xml"
-title = "News Site: articles"
-source = "https://www.newssite.example/feed"
-exclude_categories = ["peanuts", "foto del giorno", "celebrity", "podcast"]
-exclude_links = ['^https://www\.newssite\.example/(episodes|events)/']
-exclude_titles = ['(?i)^le prime pagine']
+file = "news.xml"
+title = "News: articles"
+source = "https://news.example.org/feed"
+exclude_categories = ["comics", "podcast"]
+exclude_links = ['^https://news\.example\.org/(episodes|events)/']
 exclude_paywalled = true
 ```
 
-Several sources merged into one feed, as for Tech Site, whose feeds often carry the same story:
+Several sources merged into one feed, a story both carry appearing once, without webinars or sponsored posts:
 
 ```toml
 [[rss]]
-file = "techsite.xml"
-title = "Tech Site"
+file = "engineering.xml"
+title = "Engineering blogs"
 sources = [
-  "https://feeds.techsite.example/index",
-  "https://feeds.techsite.example/features",
-  "https://feeds.techsite.example/technology-lab",
-  "https://feeds.techsite.example/gadgets",
-  "https://feeds.techsite.example/apple",
+  "https://blog.example.com/feed.xml",
+  "https://engineering.example.net/atom.xml",
 ]
-exclude_links = ['^https?://techsite\.example/(tech-policy|space|gaming|cars|culture)/']
+dedupe = "link+title"
+exclude_titles = ['(?i)\bwebinar\b']
+exclude_text = ['(?i)\bsponsored by\b']
 ```
 
-`index` lists every article, but only the newest 20, about three days' worth. It brings the AI, Science and Health sections, which have no feeds of their own; the section feeds keep older items, such as month-old Features, that `index` no longer lists. The unwanted sections are excluded by the article's URL, `techsite.example/<section>/`, the one place Tech Site states the section. Its categories don't: they come in alphabetical order, and articles worth keeping carry section names as tags (the Grand Theft Auto VI review is filed under Features and tagged Gaming; a piece on Grok filed under Policy starts with "AI"). `exclude_categories` would drop the first, and `exclude_sections` (first category) would keep the second. An exclude list rather than an include list lets a section Tech Site adds later come through.
+`dedupe = "link+title"` also merges stories published under different URLs. Check a site's categories before filtering on them: some feeds list them alphabetically, so the first isn't the section, and the URL path (`exclude_links`) is the better filter.
 
-`dedupe = "link+title"` would also merge stories published under different URLs.
+A site with no feed, whose page loads its posts from a JSON API:
+
+```toml
+[[rss]]
+file = "blog.xml"
+title = "A blog without a feed"
+source = "https://www.example.com/api/posts?lang=en"
+json = { items = "results", title = "title", link = "url", date = "date", date_format = "%B %d, %Y", summary = "excerpt" }
+```
 
 An item stays while a source lists it, and for `keep_days` (7 by default) after it first appeared once none does, within `max_items`. A feed whose source lists only a few days and whose filter keeps few items needs a longer `keep_days` not to go empty in a quiet week. A source that fails (an HTTP error, a timeout, a page that isn't a feed) keeps its items while the others refresh.
 
@@ -144,11 +143,11 @@ A push to `main` republishes the feeds. An unknown key, a wrong type, a regular 
 
 ## Editor
 
-<https://feeds.michelebologna.net/editor/> edits `feeds.toml` in the browser: every `[[feed]]`, `[[digest]]` and `[[rss]]` table, with each feed's item count, images and last good fetch from `health.json`. You can add, duplicate, delete and rename feeds, and change any key. The editor checks every change with the build's own code and messages, so a regular expression that doesn't compile or a duplicate `file` is refused before anything is saved.
+<https://feeds.michelebologna.net/editor/> edits the private `feeds.toml` in the browser: every `[[feed]]`, `[[digest]]` and `[[rss]]` table, with each feed's item count, images, last good fetch and subscription URL. You can add, duplicate, delete and rename feeds, and change any key. The editor checks every change with the build's own code and messages, so a regular expression that doesn't compile or a duplicate `file` is refused before anything is saved.
 
-For an `[[rss]]` table it previews the filters on the live sources: each item with the rule that drops it or the story it merges into, the counts before and after the change, and the sections and categories with their counts. Clicking a section or category adds it to `exclude_sections` or `exclude_categories`. A Hacker News table shows the items published now.
+For an `[[rss]]` table it previews the filters on the live sources: each item with the rule that drops it or the story it merges into, the counts before and after the change, and the sections and categories with their counts. Clicking a section or category adds it to `exclude_sections` or `exclude_categories`. A Hacker News table shows the items published now. `exclude_paywalled` and `exclude_on_hacker_news` are checked at build time only: the preview fetches no article pages.
 
-**Sign in** with a [fine-grained token](https://github.com/settings/personal-access-tokens/new) limited to the repository `mbologna/feeds`, with these permissions:
+**Sign in** with a [fine-grained token](https://github.com/settings/personal-access-tokens/new) limited to the private repository that holds `feeds.toml` (`mbologna/feeds-config` here), with these permissions:
 
 - Contents: read and write;
 - Pull requests: read and write.
@@ -158,44 +157,59 @@ The token stays in the browser's local storage for `feeds.michelebologna.net`; *
 **Saving** shows the diff of `feeds.toml` and a commit message, `chore(config): …`, which you can edit; its first line must fit in 72 characters. The editor then:
 
 1. creates a branch `editor/…` from the commit it loaded, commits `feeds.toml` to it and opens a pull request;
-2. turns on auto-merge with a merge commit, so GitHub merges the pull request once the required checks pass (it needs "Allow auto-merge" in the repository settings);
-3. follows the pull request to the merge, the Pages deploy and the first build after the merge, about 2 to 3 minutes. The site's cache can add up to 10 minutes before the change shows.
+2. follows it: the config repository's workflow checks the file with `feeds check-config`, merges the pull request (a private repository on GitHub's free plan has no auto-merge) and dispatches this repository's build;
+3. waits for the build's `health.json` to show a build after the merge, a minute or two.
 
-The preview fetches the sources through `GET /editor/fetch?url=<source>` on the same host, with the token as `Authorization: Bearer <token>`: most feeds don't allow a browser to fetch them from another site. The feeds Worker serves that route and checks that the token can push to this repository. Without the route the editor says "Preview relay unavailable", and editing and saving still work. The Worker also sends a Content-Security-Policy for `/editor/*`; the browser test runs the editor under the same policy (`CSP` in `tests/test_editor_browser.py`).
+The feeds Worker serves the editor's three endpoints on the same host, each with the token as `Authorization: Bearer <token>`, and answers only a token that can push to the config repository:
 
-The same Python code as the build runs in the browser: [Pyodide](https://pyodide.org/), pinned and loaded from jsDelivr with Subresource Integrity hashes, runs in a Web Worker the feeds wheel and the locked versions of feedparser and tomlkit (`uv.lock`'s `pyodide` group), which CI publishes next to the editor as `feeds.whl` and `requirements.txt`. `src/feeds/site/editor/bridge.py` loads, edits and previews: it edits with [tomlkit](https://github.com/python-poetry/tomlkit), which keeps the file's comments and layout, and filters and merges with `rss.select`, the function the build uses.
+- `GET /editor/fetch?url=<source>`, a relay for the preview: most feeds don't allow a browser to fetch them from another site. Without it the editor says "Preview relay unavailable", and editing and saving still work;
+- `GET /editor/health`: the build's `health.json`, private, plus each feed's subscription URL;
+- `GET /editor/feed?file=<file>`: a published feed.
+
+The Worker also sends a Content-Security-Policy for `/editor/*`; the browser test runs the editor under the same policy (`CSP` in `tests/test_editor_browser.py`).
+
+The same Python code as the build runs in the browser: [Pyodide](https://pyodide.org/), pinned and loaded from jsDelivr with Subresource Integrity hashes, runs in a Web Worker the feeds wheel and the locked versions of feedparser and tomlkit (`uv.lock`'s `pyodide` group), which CI publishes to GitHub Pages with the editor, alone, as `feeds.whl` and `requirements.txt`. `src/feeds/site/editor/bridge.py` loads, edits and previews: it edits with [tomlkit](https://github.com/python-poetry/tomlkit), which keeps the file's comments and layout, and filters and merges with `rss.select`, the function the build uses.
 
 ## How it's published
 
-The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pull request, checks `feeds.toml` with `feeds check-config`, and tests the editor in Chromium. On `main` it then builds the feeds and deploys them to GitHub Pages, with the editor:
+The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pull request, checks `examples/feeds.toml` with `feeds check-config`, and tests the editor in Chromium. On `main` it then builds the feeds, writes them to Workers KV, and deploys the editor to GitHub Pages:
 
 - on every push;
 - every 30 minutes (at :07 and :37), dispatched by a Cron Trigger on the Worker that serves the feeds: GitHub's own schedule ran hours late, or not at all. Those runs skip the tests;
+- when the private `feeds.toml` changes: its repository's workflow dispatches the build;
 - every Monday at 06:00 UTC, on GitHub's own schedule;
 - on a manual run.
 
+This repository and its Actions logs are public, and the feed list isn't, so:
+
+- the build checks out the private `feeds.toml` with a read-only deploy key (secret `FEEDS_CONFIG_DEPLOY_KEY`);
+- `feeds build --quiet` prints totals only: no feed, source or URL, even in an error;
+- the feeds, `state.json` and `health.json` go to Workers KV (`feeds kv-publish`), never to Pages or an artifact. The editor is the only thing on Pages.
+
 A build:
 
-1. Reads the previous run's `state.json` from the published site. It holds every listed story with its preview, and when each feed first listed it.
+1. Reads the previous run's `state.json` from KV (`feeds kv-get`). It holds every listed story with its preview, and when each feed first listed it.
 2. Asks the [Algolia HN API](https://hn.algolia.com/api), the one hnrss uses, for each feed's stories. Feeds that share a query share one request. A ranked feed first reads `topstories.json` from the [HN API](https://github.com/HackerNews/API), then asks Algolia for those ids, 100 per request.
 3. Then refreshes the counts of the stories a feed still holds but the API no longer lists for it (off the front page, out of the ranking), 100 per request.
 4. Fetches the previews still missing, eight pages at a time: the first 512 KB of each, with a 10-second timeout. It retries a failed page on the next two runs, except for permanent errors such as `403` and `404`.
 5. Looks up the top comment of every listed story that has comments, at most every 2 hours per story: the first live reply in the story's `kids` from the HN API, which lists them in HN's order.
-6. Fetches every RSS source with a conditional GET (`If-None-Match`, `If-Modified-Since`), a 30-second timeout and one retry after a network error; a source that two feeds share is fetched once. A `304` keeps what the source listed before. It reads the feed with [feedparser](https://github.com/kurtmckee/feedparser), filters and merges the items, then fetches the previews they lack, with the same retry rules as step 4.
-7. Writes each feed, `state.json`, `index.html` and `health.json`, and deploys them.
+6. Fetches every RSS source with a conditional GET (`If-None-Match`, `If-Modified-Since`), a 30-second timeout and one retry after a network error; a source that two feeds share is fetched once. A `304` keeps what the source listed before, unless the feed's filters changed since the last build: then every source is fetched in full, so the items the feed holds are judged again. It reads the feed with [feedparser](https://github.com/kurtmckee/feedparser), filters and merges the items, then fetches the previews they lack, with the same retry rules as step 4.
+7. Writes each feed, `state.json` and `health.json`, then publishes them to KV.
 
-`health.json` is for outside monitoring: the build time (`built`, Unix seconds) and, per feed, its item count and how many items have an image and an excerpt. Each RSS feed, under `rss`, also has `last_ok` (Unix seconds), the oldest of its sources' last good fetches, `sources_failed`, the sources that failed in this build, and `ok`, false while any source last answered more than 3 hours ago. When fewer than 30% of a feed's items have an image, the build also leaves a warning on the run's summary page: a sign the runner is being blocked or the page parser broke.
+**Publishing to KV** writes only what changed. The free plan allows 1,000 writes a day (reset at 00:00 UTC), and each key's metadata holds the hash of its document without `lastBuildDate`, so one list request tells which feeds changed. The HN feeds change on every build (their items show points, comments and age), the RSS feeds only when their items do, and `state.json` and `health.json` are written every time: about 370 writes a day for 15 feeds. A feed no longer in `feeds.toml` is deleted from KV. `health.json` counts the day's writes under `kv`; past 900, a feed is written only when an item came or went, `kv.guard` is true, and `/health` reports it.
+
+`health.json` is for outside monitoring: the build time (`built`, Unix seconds) and, per feed, its item count and how many items have an image and an excerpt. Each RSS feed, under `rss`, also has `last_ok` (Unix seconds), the oldest of its sources' last good fetches, `sources_failed`, the sources that failed in this build, and `ok`, false while any source last answered more than 3 hours ago. When fewer than 30% of a feed's items have an image, the build also leaves a warning (counted, in a quiet build) on the run's summary page: a sign the runner is being blocked or the page parser broke.
 
 The generated files are never committed. Losing `state.json` only means fetching the previews again.
 
-After deploying, the workflow fetches every published feed and fails if one is missing or its `lastBuildDate` is more than 3 hours old. If the dispatches stop, the freshness check can't notice (it runs in the same workflow); the outside check of `health.json` through the Worker does, and alerts.
+After publishing, the workflow checks `https://feeds.michelebologna.net/health`, which fails when the last build is over 3 hours old or a feed is stale. If the dispatches stop, that check can't notice (it runs in the same workflow); the outside check of `/health` does, and alerts.
 
 ## Run it yourself
 
-The script needs Python 3.15 or later (uv, below, downloads it if the machine has none), [feedparser](https://github.com/kurtmckee/feedparser), and network access to the HN APIs, the RSS sources and the linked pages. It reads the feed list from `feeds.toml` in the working directory, so start from a copy of this repo's file. With [uv](https://docs.astral.sh/uv/), which installs feedparser too:
+The script needs Python 3.15 or later (uv, below, downloads it if the machine has none), [feedparser](https://github.com/kurtmckee/feedparser), and network access to the HN APIs, the RSS sources and the linked pages. It reads the feed list from `feeds.toml` in the working directory, so start from a copy of the example. With [uv](https://docs.astral.sh/uv/), which installs feedparser too:
 
 ```sh
-curl -O https://raw.githubusercontent.com/mbologna/feeds/main/feeds.toml
+curl -o feeds.toml https://raw.githubusercontent.com/mbologna/feeds/main/examples/feeds.toml
 uvx --from git+https://github.com/mbologna/feeds feeds build \
   --output-dir public --page-url https://feeds.example.com/ --previous-state public/state.json
 ```
@@ -205,7 +219,8 @@ From a clone, `uv run feeds build` takes the same options. The `build` options:
 - `--config`: the feed list (default `feeds.toml`);
 - `--output-dir`: where to write the feeds, `index.html`, `health.json`, `state.json` and the icons (default `public`);
 - `--page-url`: the URL the folder is served from, used for the links in the feeds and on the index page (default: this site's address);
-- `--previous-state`: the previous run's `state.json`, as a path or URL. Without the option the build fetches `state.json` from `--page-url`; an empty string starts fresh.
+- `--previous-state`: the previous run's `state.json`, as a path or URL. Without the option the build fetches `state.json` from `--page-url`; an empty string starts fresh;
+- `--quiet`: print totals only, with no feed, source or URL even in an error, for a public log of a private list.
 
 Keep the output directory between runs and point `--previous-state` at the `state.json` inside it: the build reads it before writing the new one. The digest's frozen days, the fetched previews, the time each feed first listed a story and each RSS source's validators all live there. A missing or unreadable file starts an empty state, as on the first run, so every preview is fetched again.
 
@@ -217,6 +232,15 @@ Serve the folder with any static web server, such as nginx, Caddy or `python3 -m
 ```
 
 Give cron the full path to `uvx` if its `PATH` does not include it. `feeds check --page-url https://feeds.example.com/`, run from the same directory, exits with status 1 when a configured feed is missing or was built more than 3 hours ago (`--max-age-hours`). `feeds check-config feeds.toml` exits with status 2 and the build's message when the file wouldn't build.
+
+### With a private list, on Workers KV
+
+As this repository runs it, for free: the list in a private repository, the build in a public one's Actions (free minutes), the feeds in Workers KV behind a Worker that checks a token.
+
+- **The list:** a private repository with `feeds.toml` and a workflow that runs `feeds check-config` on every change. The build reads it with a read-only deploy key: its private half is the secret `FEEDS_CONFIG_DEPLOY_KEY` here.
+- **KV:** a namespace, and a Cloudflare API token that can only edit Workers KV. Here they're the repository variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_KV_NAMESPACE` and the secret `CLOUDFLARE_KV_TOKEN`; `feeds kv-get` and `feeds kv-publish` read the same names from the environment.
+- **The build:** `feeds kv-get state.json previous.json`, then `feeds build --quiet --config config/feeds.toml --previous-state previous.json`, then `feeds kv-publish public --config config/feeds.toml`.
+- **Serving:** a Worker bound to the namespace serves `<file>.xml` with a token check, and computes `/health` from `health.json`. This one is in [mbologna/infra](https://codeberg.org/mbologna/infra) (`terraform/dns-michelebologna.net/feeds-worker.js`).
 
 ## Development
 
@@ -231,8 +255,8 @@ uv run feeds build --output-dir public --previous-state ''
 # Check the published feeds' age
 uv run feeds check --max-age-hours 3
 
-# Check feeds.toml
-uv run feeds check-config feeds.toml
+# Check the example feeds.toml
+uv run feeds check-config examples/feeds.toml
 
 # The editor's browser test: Chromium, Pyodide from jsDelivr, packages from PyPI
 uv run --group editor playwright install chromium
@@ -241,7 +265,7 @@ uv run --group editor pytest tests/test_editor_browser.py
 
 `uv run pytest` skips the browser test unless the `editor` dependency group is installed.
 
-The tests never touch the network, apart from the editor's browser test: they swap `urlopen` for a table of canned responses. The RSS fixtures under `tests/fixtures/` are cut from News Site's live feed, plus items modelled on Tech Site's, an Atom sample and a page that isn't a feed. `tests/fixtures/feeds.toml` is a copy of `feeds.toml` for the editor's tests; the tests check only that the real file builds, since the editor changes it.
+The tests never touch the network, apart from the editor's browser test: they swap `urlopen` for a table of canned responses. The RSS fixtures under `tests/fixtures/` are cut from News Site's live feed, plus items modelled on Tech Site's, an Atom sample and a page that isn't a feed. `tests/fixtures/feeds.toml` is a sample config for the editor's tests; `examples/feeds.toml` is only checked to build.
 
 Dependencies resolve only to releases at least 7 days old (`exclude-newer` in `pyproject.toml`). The script itself needs only feedparser and the standard library.
 
@@ -259,7 +283,7 @@ For filtering other feeds:
 - [RSS-Bridge](https://github.com/RSS-Bridge/rss-bridge)'s FilterBridge has no category filter, and the public instances belong to others.
 - [Miniflux](https://miniflux.app/) filters but can't republish a feed.
 - [Feedly](https://feedly.com/)'s mute filters need a Pro+ plan and match keywords only, not categories or links.
-- None of them hides the items of one feed that another already carried (Links stories HN had), or reads a page's paywall marker.
+- None of them hides the items of one feed that another already carried (an aggregator's stories HN had), or reads a page's paywall marker.
 - For a site with no feed, RSS-Bridge needs a bridge written for that site and a server to run it; the JSON API the site's own page reads needs only a field map.
 
 Actions and Pages cost nothing for a public repository, and the HN feeds already had the preview fetching and the state that RSS items need. Checked 2026-11-24.
