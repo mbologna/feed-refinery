@@ -70,6 +70,7 @@ Each `[[rss]]` table publishes items from other feeds:
 - `file`, `title`: as for an HN feed.
 - `source`: the URL of an RSS or Atom feed; or `sources`, a list of them, merged into one feed. A table has one or the other.
 - `include_categories`, `exclude_categories`: categories, matched against the whole category, ignoring case.
+- `include_sections`, `exclude_sections`: sections, matched like categories but only against the item's first category. WordPress sites, Tech Site among them, list the sections first and then the free-form tags, which may reuse a section's name.
 - `include_titles`, `exclude_titles`, `include_links`, `exclude_links`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax), each searched anywhere in the item's title or link. Start one with `(?i)` to ignore case.
 - `exclude_authors`: authors, matched against the whole name, ignoring case.
 - `enrich`: `false` skips fetching article pages, so items carry only what the source gives (default `true`).
@@ -90,19 +91,23 @@ exclude_links = ['^https://www\.newssite\.example/(episodes|newsletter)/']
 exclude_titles = ['(?i)^le prime pagine']
 ```
 
-Several sources merged into one feed, as for Tech Site's sections, which often carry the same story:
+Several sources merged into one feed, as for Tech Site, whose feeds often carry the same story:
 
 ```toml
 [[rss]]
 file = "techsite.xml"
 title = "Tech Site"
 sources = [
+  "https://feeds.techsite.example/index",
   "https://feeds.techsite.example/features",
   "https://feeds.techsite.example/technology-lab",
   "https://feeds.techsite.example/gadgets",
   "https://feeds.techsite.example/apple",
 ]
+exclude_sections = ["Policy", "Space", "Gaming", "Cars", "Culture"]
 ```
+
+`index` lists every article, but only the newest 20, about three days' worth. It brings the AI, Science and Health sections, which have no feeds of their own; the section feeds keep older items, such as month-old Features, that `index` no longer lists. The unwanted sections are excluded by section rather than by category because articles worth keeping carry those names as tags: the Grand Theft Auto VI review is filed under Features and tagged Gaming, a piece on Tesla's autonomy plans is AI tagged Cars. `exclude_categories` would drop them; `exclude_sections` keeps them. An exclude list rather than an include list lets a section Tech Site adds later come through.
 
 `dedupe = "link+title"` would also merge stories published under different URLs.
 
@@ -119,7 +124,7 @@ A story that two sources carry, or one source under two URLs, appears once. Two 
 
 With `dedupe = "link+title"`, items with the same normalised title also count as one: case and Unicode forms folded, runs of whitespace and punctuation collapsed. This suits sites that publish one story under different URLs.
 
-The copy the feed first saw stays, so its guid holds across builds. Among copies new in the same build, the one with the earliest date wins, then the one from the source listed first. The kept item carries the categories of every copy, so a section feed's tags aren't lost.
+The copy the feed first saw stays, so its guid holds across builds. Among copies new in the same build, the one with the earliest date wins, then the one from the source listed first. The kept item carries the categories of every copy, so a section feed's tags aren't lost. The published item lists a category once, in its first spelling: "Apple" and the tag "apple" become "Apple".
 
 A push to `main` republishes the feeds. An unknown key, a wrong type, a regular expression that doesn't compile or a duplicate `file` fails the build.
 
@@ -190,7 +195,7 @@ uv run feeds build --output-dir public --previous-state ''
 uv run feeds check --max-age-hours 3
 ```
 
-The tests never touch the network: they swap `urlopen` for a table of canned responses. The RSS fixtures under `tests/fixtures/` are cut from News Site's live feed, plus an Atom sample and a page that isn't a feed.
+The tests never touch the network: they swap `urlopen` for a table of canned responses. The RSS fixtures under `tests/fixtures/` are cut from News Site's live feed, plus items modelled on Tech Site's, an Atom sample and a page that isn't a feed.
 
 Dependencies resolve only to releases at least 7 days old (`exclude-newer` in `pyproject.toml`). The script itself needs only feedparser and the standard library.
 

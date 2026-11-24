@@ -167,17 +167,24 @@ def keep(item: Item, feed: Rss) -> bool:
 
     The includes come first: an item must match every include list the feed
     sets (any entry of each). The excludes then drop whatever matches any
-    entry of any of them.
+    entry of any of them. Sections match only the first category: the
+    section on most WordPress sites, whose other categories and free-form
+    tags may reuse section names.
     """
     categories = {c.casefold() for c in item.categories}
+    section = item.categories[0].casefold() if item.categories else None
     link = item.link or ""
     if feed.include_categories and not categories & feed.include_categories:
+        return False
+    if feed.include_sections and section not in feed.include_sections:
         return False
     if feed.include_titles and not any(p.search(item.title) for p in feed.include_titles):
         return False
     if feed.include_links and not any(p.search(link) for p in feed.include_links):
         return False
     if categories & feed.exclude_categories:
+        return False
+    if section in feed.exclude_sections:
         return False
     if any(p.search(item.title) for p in feed.exclude_titles):
         return False

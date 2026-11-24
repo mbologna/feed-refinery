@@ -53,9 +53,12 @@ class Rss:
     file: str
     title: str
     sources: tuple[str, ...]
-    # Matched case-insensitively against the whole category or author.
+    # Matched case-insensitively against the whole category or author. A
+    # section is the item's first category, as WordPress feeds list them.
     include_categories: frozenset[str] = frozenset()
     exclude_categories: frozenset[str] = frozenset()
+    include_sections: frozenset[str] = frozenset()
+    exclude_sections: frozenset[str] = frozenset()
     exclude_authors: frozenset[str] = frozenset()
     # Regular expressions, each searched anywhere in the title or link.
     include_titles: tuple[re.Pattern[str], ...] = ()
@@ -110,7 +113,7 @@ def _parse_digest(where: str, table: dict, used: list[str]) -> Digest:
 
 
 RSS_KNOWN = {f.name for f in fields(Rss)} | {"source"}  # source: one URL, sources: several
-RSS_WORDS = ("include_categories", "exclude_categories", "exclude_authors")
+RSS_WORDS = ("include_categories", "exclude_categories", "include_sections", "exclude_sections", "exclude_authors")
 RSS_PATTERNS = ("include_titles", "exclude_titles", "include_links", "exclude_links")
 MAX_RSS_ITEMS = 1000
 
