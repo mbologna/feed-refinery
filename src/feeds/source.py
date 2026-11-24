@@ -6,7 +6,7 @@ import datetime as dt
 import json
 import urllib.parse
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from . import USER_AGENT
@@ -100,10 +100,11 @@ def query_url(feed: Feed, now: dt.datetime) -> str:
 
 
 def parse_hits(data: dict) -> list[Story]:
+    """The hits as stories. Job posts ("… (YC S13) Is Hiring") are ads and never become one."""
     stories = []
     for hit in data.get("hits", []):
         title = (hit.get("title") or "").strip()
-        if not title or not hit.get("objectID"):
+        if not title or not hit.get("objectID") or "job" in (hit.get("_tags") or []):
             continue
         stories.append(
             Story(
@@ -123,3 +124,20 @@ def parse_hits(data: dict) -> list[Story]:
 def fetch_stories(url: str) -> list[Story]:
     """Stories for a query_url. Raises on any failure: a feed built from a failed request would be empty."""
     return parse_hits(fetch_json(url))
+
+
+def url_query_url(url: str) -> str:
+    """The stories submitted with a link: Algolia matches words, so the scheme and www. are left out."""
+    words = url.split("://", 1)[-1].removeprefix("www.")
+    params = {"query": words, "restrictSearchableAttributes": "url", "tags": "story", "hitsPerPage": "20"}
+    return API + "search?" + urllib.parse.urlencode(params)
+
+
+def points_for_url(url: str, same: Callable[[str], str]) -> int:
+    """The most points HN gave a story linking to url, 0 when none did. same(link) is the form two links share.
+
+    Raises on any failure, so a failed lookup is retried rather than read as "not on HN".
+    """
+    wanted = same(url)
+    hits = fetch_json(url_query_url(url)).get("hits", [])
+    return max((hit.get("points") or 0 for hit in hits if hit.get("url") and same(hit["url"]) == wanted), default=0)

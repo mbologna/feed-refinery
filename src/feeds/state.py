@@ -21,15 +21,19 @@ from . import USER_AGENT
 from .comments import Comment
 from .config import Digest, Feed, Rss
 from .preview import Preview
-from .rss import Fetched, Item, keep, select
+from .rss import Fetched, Item, Selection, canonical_link, dedup_key, keep, select
 from .source import Story
 
-VERSION = 2  # 2 added the rss section; a version 1 file loads with it empty
-READABLE = (1, 2)
+# 2 added the rss section; a version 1 file loads with it empty. 3 added the
+# items' hn_points and hn_checked, the previews' paywalled and the feeds'
+# filters; a version 2 file loads with them unknown.
+VERSION = 3
+READABLE = (1, 2, 3)
 MAX_ATTEMPTS = 3  # preview fetches per story before giving up on it
 COMMENT_INTERVAL = 2 * 3600  # how often a listed story's top comment is looked up again
 RETRY_STATUSES = {408, 429}  # client errors worth another try; other 4xx won't change
-RSS_KEEP = 7 * 86400  # how long an item no source lists any more stays in its feed
+HN_RECHECK = 6 * 3600  # how often a new item's HN points are looked up again
+HN_RECHECK_FOR = 2 * 86400  # for how long after an item first appears: an HN story's points settle in a day
 
 
 @dataclass
@@ -61,6 +65,8 @@ class RssEntry:
     preview: Preview | None = None  # None until a fetch succeeds, or while the item needs none
     attempts: int = 0
     from_sources: list[str] = field(default_factory=list)  # the sources that list it, in the config's order
+    hn_points: int | None = None  # the most points an HN story with this link had; None until looked up
+    hn_checked: int = 0  # Unix time of that lookup; 0 = never
 
     @property
     def sort_key(self) -> tuple[int, int]:
@@ -79,6 +85,10 @@ class RssEntry:
 class RssFeed:
     sources: dict[str, Source] = field(default_factory=dict)
     items: dict[str, RssEntry] = field(default_factory=dict)  # dedup key -> entry, newest first
+    # The feed's Rss.filters_key when it was built: a different one means a
+    # changed filter, and the sources are fetched without validators so every
+    # item they list is judged again.
+    filters: str = ""
 
     def last_ok(self, feed: Rss) -> int | None:
         """The oldest last_ok of the feed's sources: the feed is as fresh as its stalest source."""
@@ -116,14 +126,17 @@ class State:
                     "sources": {url: asdict(s) for url, s in feed.sources.items()},
                     "items": {
                         key: {
-                            "item": asdict(e.item),
+                            "item": {k: v for k, v in asdict(e.item).items() if k != "text"},
                             "first_seen": e.first_seen,
                             "preview": asdict(e.preview) if e.preview else None,
                             "attempts": e.attempts,
                             "from_sources": e.from_sources,
+                            "hn_points": e.hn_points,
+                            "hn_checked": e.hn_checked,
                         }
                         for key, e in feed.items.items()
                     },
+                    "filters": feed.filters,
                 }
                 for file, feed in self.rss.items()
             },
@@ -172,8 +185,11 @@ def _rss_feed(data: dict) -> RssFeed:
             preview=Preview(**e["preview"]) if e["preview"] is not None else None,
             attempts=int(e["attempts"]),
             from_sources=[str(s) for s in e["from_sources"]],
+            # Version 3: absent from version 2 files.
+            hn_points=None if e.get("hn_points") is None else int(e["hn_points"]),
+            hn_checked=int(e.get("hn_checked", 0)),
         )
-    return RssFeed(sources, items)
+    return RssFeed(sources, items, str(data.get("filters", "")))  # filters: version 3
 
 
 def load(source: str) -> State:
@@ -250,7 +266,14 @@ def update(
         # while it is still listed would add it back on the next run. The
         # window times out only the stories that no longer match.
         current = {story.id for story in results[feed.file]}
-        kept = [sid for sid, t in seen.items() if sid in state.stories and (sid in current or t >= cutoff)]
+        kept = [
+            sid
+            for sid, t in seen.items()
+            if sid in state.stories
+            and (sid in current or t >= cutoff)
+            # A pattern added later applies to the stories the feed already holds.
+            and not any(p.search(state.stories[sid].story.title) for p in feed.exclude_titles)
+        ]
         # The cap keeps the listed stories first, for the same reason. A query
         # asks for at most max_items hits, so they always fit.
         kept.sort(key=lambda sid: (sid in current, seen[sid]), reverse=True)
@@ -298,16 +321,25 @@ def update_rss(
         items = current.items
         for entry in items.values():
             entry.from_sources = [s for s in entry.from_sources if s in sources and s not in refreshed]
-        _merge(feed, items, listed, now)
-        cutoff = now - RSS_KEEP
-        alive = [(k, e) for k, e in items.items() if keep(e.item, feed) and (e.from_sources or e.first_seen >= cutoff)]
+        chosen = _merge(feed, items, listed, now)
+        # A story a source lists again but whose fresh copy a filter drops
+        # leaves now: the fresh copy has the text exclude_text searches, which
+        # the stored one lacks, and a changed filter applies at once.
+        passed = {c.key for c in chosen.choices if c.drop is None}
+        dropped = {dedup_key(c.item) for c in chosen.choices if c.drop is not None} - passed
+        cutoff = now - feed.keep_days * 86400
+        alive = [
+            (k, e)
+            for k, e in items.items()
+            if k not in dropped and keep(e.item, feed) and (e.from_sources or e.first_seen >= cutoff)
+        ]
         alive.sort(key=lambda ke: ke[1].sort_key, reverse=True)
-        kept[feed.file] = RssFeed(sources, dict(alive[: feed.max_items]))
+        kept[feed.file] = RssFeed(sources, dict(alive[: feed.max_items]), feed.filters_key)
     state.rss = kept
 
 
-def _merge(feed: Rss, items: dict[str, RssEntry], listed: list[tuple[str, list[Item]]], now: int) -> None:
-    """Add the sources' items that pass the filters to items, one entry per story (see rss.select)."""
+def _merge(feed: Rss, items: dict[str, RssEntry], listed: list[tuple[str, list[Item]]], now: int) -> Selection:
+    """Add the sources' items that pass the filters to items, one entry per story (see rss.select). Returns the selection."""
     chosen = select(feed, listed, {k: e.item for k, e in items.items()})
     order = {url: n for n, url in enumerate(feed.sources)}
     known = dict(items)
@@ -320,6 +352,7 @@ def _merge(feed: Rss, items: dict[str, RssEntry], listed: list[tuple[str, list[I
         if key in chosen.sources:
             entry.from_sources = sorted({*entry.from_sources, *chosen.sources[key]}, key=order.__getitem__)
         items[key] = entry
+    return chosen
 
 
 def _fetch_all(todo: dict[str, list], fetch, workers: int) -> tuple[int, list[tuple[str, str]]]:
@@ -364,7 +397,10 @@ def fetch_previews(state: State, fetch, workers: int = 8) -> tuple[int, list[tup
 def fetch_rss_previews(
     state: State, feeds: Sequence[Rss], fetch, workers: int = 8
 ) -> tuple[int, list[tuple[str, str]]]:
-    """Fetch the previews of the enriched feeds' items that lack an image or an excerpt, with the stories' retry rules."""
+    """Fetch the previews of the enriched feeds' items that lack an image or an excerpt, with the stories' retry rules.
+
+    With exclude_paywalled every item's page is fetched: it says whether the item is paywalled.
+    """
     todo: dict[str, list[RssEntry]] = {}
     for feed in feeds:
         if not feed.enrich:
@@ -372,7 +408,7 @@ def fetch_rss_previews(
         for entry in state.rss.get(feed.file, RssFeed()).items.values():
             if entry.preview is not None or entry.attempts >= MAX_ATTEMPTS:
                 continue
-            if entry.item.link and not (entry.item.image and entry.item.summary):
+            if entry.item.link and (feed.exclude_paywalled or not (entry.item.image and entry.item.summary)):
                 todo.setdefault(entry.item.link, []).append(entry)
             else:
                 entry.preview = Preview()  # nothing to fetch, or nothing missing
@@ -405,3 +441,69 @@ def fetch_comments(
             entry.comment_checked = now
             fetched += 1
     return fetched, failed
+
+
+def _hn_form(url: str) -> str:
+    """The form an HN story's link and an item's link share: canonical, without the scheme or www."""
+    return canonical_link(url).split("://", 1)[-1].removeprefix("www.")
+
+
+def check_hacker_news(
+    state: State, feeds: Sequence[Rss], lookup, floor: int, now: int, workers: int = 8
+) -> tuple[int, list[tuple[str, str]]]:
+    """Record which items of the exclude_on_hacker_news feeds were in the [[feed]] tables' stories.
+
+    An item whose link is a story the state holds (the front page, best, top)
+    gets floor points at once. The others are looked up with lookup(link,
+    same), which returns the most points an HN story with that link had: when
+    an item first appears, then every HN_RECHECK for HN_RECHECK_FOR, as a
+    story's points still grow on its first day. A failed lookup is retried on
+    the next run and leaves the item shown. Returns how many lookups succeeded
+    and the (link, error) failures.
+    """
+    stories = {_hn_form(e.story.url) for e in state.stories.values() if e.story.url}
+    todo: list[tuple[str, RssEntry]] = []
+    for feed in feeds:
+        if not feed.exclude_on_hacker_news:
+            continue
+        for entry in state.rss.get(feed.file, RssFeed()).items.values():
+            link = entry.item.link
+            if not link:
+                continue
+            if _hn_form(link) in stories:
+                entry.hn_points = max(entry.hn_points or 0, floor)
+                entry.hn_checked = now
+            elif not entry.hn_checked or (
+                now - entry.first_seen < HN_RECHECK_FOR and now - entry.hn_checked >= HN_RECHECK
+            ):
+                todo.append((link, entry))
+    looked_up, failed = 0, []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(lookup, link, _hn_form): (link, entry) for link, entry in todo}
+        for future in as_completed(futures):
+            link, entry = futures[future]
+            try:
+                points = future.result()
+            except Exception as e:  # as in fetch_previews: one bad lookup must not break the feeds
+                failed.append((link, f"{type(e).__name__}: {e}"))
+                continue
+            entry.hn_points = max(entry.hn_points or 0, points)
+            entry.hn_checked = now
+            looked_up += 1
+    return looked_up, failed
+
+
+def visible(feed: Rss, entry: RssEntry, floor: int) -> bool:
+    """Whether a feed shows an item it holds.
+
+    exclude_paywalled hides an item whose page says it's paywalled, and one
+    whose page hasn't been read yet, so a paywalled item never shows for a
+    run; after MAX_ATTEMPTS failed fetches it shows. exclude_on_hacker_news
+    hides an item an HN story with its link gave floor points or more.
+    """
+    if feed.exclude_paywalled:
+        if entry.preview is None and entry.attempts < MAX_ATTEMPTS:
+            return False
+        if entry.preview is not None and entry.preview.paywalled:
+            return False
+    return not (feed.exclude_on_hacker_news and (entry.hn_points or 0) >= floor)

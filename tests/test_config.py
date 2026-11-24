@@ -114,8 +114,11 @@ include_titles = ["^News"]
 exclude_titles = ["(?i)sponsored"]
 include_links = ["/articles/"]
 exclude_links = ["/video/"]
+exclude_text = ["(?i)sponsored by"]
 enrich = false
+exclude_on_hacker_news = true
 max_items = 20
+keep_days = 30
 dedupe = "link+title"
 """
     ).rss
@@ -127,6 +130,55 @@ dedupe = "link+title"
     assert feed.exclude_titles[0].search("A SPONSORED post")
     assert feed.include_links == (re.compile("/articles/"),) and feed.exclude_links == (re.compile("/video/"),)
     assert not feed.enrich and feed.max_items == 20 and feed.dedupe == "link+title"
+    assert feed.exclude_text == (re.compile("(?i)sponsored by"),)
+    assert feed.exclude_on_hacker_news and not feed.exclude_paywalled and feed.keep_days == 30
+
+
+def test_rss_paywall_flag_and_defaults():
+    (feed,) = parse(RSS + 'source = "https://a.example/"\nexclude_paywalled = true\n').rss
+    assert feed.exclude_paywalled and feed.enrich
+    (plain,) = parse(RSS + 'source = "https://a.example/"\n').rss
+    assert not plain.exclude_paywalled and not plain.exclude_on_hacker_news and plain.keep_days == 7
+    assert plain.exclude_text == ()
+
+
+def test_hn_tables_take_exclude_titles():
+    conf = parse(
+        '[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "story"\nexclude_titles = ["^Launch HN:"]\n'
+        '[[digest]]\nfile = "d.xml"\ntitle = "D"\nexclude_titles = ["(?i)^launch hn"]\n'
+    )
+    assert conf.feeds[0].exclude_titles == (re.compile("^Launch HN:"),)
+    assert conf.digests[0].exclude_titles[0].search("LAUNCH HN: Acme")
+    assert parse('[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "story"\n').feeds[0].exclude_titles == ()
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ('[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "story"\nexclude_titles = "x"', "feed #1: exclude_titles must"),
+        ('[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "story"\nexclude_titles = ["("]', "feed #1: exclude_titles:"),
+        ('[[digest]]\nfile = "d.xml"\ntitle = "D"\nexclude_titles = ["("]', "digest #1: exclude_titles:"),
+    ],
+)
+def test_bad_hn_exclude_titles_fail_with_a_message(text, message):
+    with pytest.raises(ConfigError, match=message):
+        parse(text)
+
+
+@pytest.mark.parametrize(
+    ("tables", "floor"),
+    [
+        ('[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "front_page"\n', 100),
+        (
+            '[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "story"\nmin_points = 150\n'
+            '[[feed]]\nfile = "b.xml"\ntitle = "B"\ntags = "story"\nmin_points = 80\n',
+            80,
+        ),
+        (RSS + 'source = "https://a.example/"\n', 100),
+    ],
+)
+def test_hacker_news_floor_is_the_lowest_points_threshold(tables, floor):
+    assert parse(tables).hacker_news_floor == floor
 
 
 @pytest.mark.parametrize(
@@ -156,6 +208,12 @@ dedupe = "link+title"
         (RSS + 'source = "https://a.example/"\nmax_items = true', "max_items must be a whole number"),
         (RSS + 'source = "https://a.example/"\nmax_items = 1001', "max_items must be a whole number"),
         (RSS + 'source = "https://a.example/"\ndedupe = "title"', "dedupe must be one of: 'link', 'link\\+title'"),
+        (RSS + 'source = "https://a.example/"\nexclude_text = ["(x"]', "exclude_text: .* is not a valid regular"),
+        (RSS + 'source = "https://a.example/"\nexclude_paywalled = 1', "exclude_paywalled must be true or false"),
+        (RSS + 'source = "https://a.example/"\nexclude_on_hacker_news = "y"', "exclude_on_hacker_news must be true"),
+        (RSS + 'source = "https://a.example/"\nexclude_paywalled = true\nenrich = false', "exclude_paywalled needs"),
+        (RSS + 'source = "https://a.example/"\nkeep_days = 0', "keep_days must be a whole number from 1 to 365"),
+        (RSS + 'source = "https://a.example/"\nkeep_days = 366', "keep_days must be a whole number"),
         ('[[rss]]\nfile = "R.xml"\ntitle = "R"\nsource = "https://a.example/"', "file must be a lowercase name"),
         ('[[rss]]\nfile = "state.json"\ntitle = "R"\nsource = "https://a.example/"', "file must be a lowercase"),
         (
@@ -173,3 +231,12 @@ dedupe = "link+title"
 def test_bad_rss_tables_fail_with_a_message(text, message):
     with pytest.raises(ConfigError, match=message):
         parse(text)
+
+
+def test_filters_key_follows_the_filters_only():
+    base = parse(RSS + 'source = "https://a.example/"\nexclude_titles = ["^A", "^B"]\n').rss[0]
+    same = parse(RSS + 'source = "https://a.example/"\nexclude_titles = ["^B", "^A"]\nmax_items = 5\n').rss[0]
+    other = parse(RSS + 'source = "https://a.example/"\nexclude_titles = ["^A"]\n').rss[0]
+    text = parse(RSS + 'source = "https://a.example/"\nexclude_titles = ["^A", "^B"]\nexclude_text = ["x"]\n').rss[0]
+    assert base.filters_key == same.filters_key  # order and non-filter options don't count
+    assert len({base.filters_key, other.filters_key, text.filters_key}) == 3

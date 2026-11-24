@@ -1,11 +1,22 @@
 import datetime as dt
+import urllib.error
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from conftest import hit
 
 from feeds.config import Feed
-from feeds.source import API, FIREBASE, fetch_ranked_ids, fetch_stories, ids_query_urls, parse_hits, query_url
+from feeds.source import (
+    API,
+    FIREBASE,
+    fetch_ranked_ids,
+    fetch_stories,
+    ids_query_urls,
+    parse_hits,
+    points_for_url,
+    query_url,
+    url_query_url,
+)
 
 NOW = dt.datetime(2026, 11, 19, 12, 0, tzinfo=dt.UTC)
 
@@ -92,3 +103,50 @@ def test_fetch_ranked_ids_rejects_a_non_list(web):
     web.json(FIREBASE + "topstories.json", {"error": "nope"})
     with pytest.raises(ValueError):
         fetch_ranked_ids()
+
+
+def test_parse_hits_skips_job_posts():
+    stories = parse_hits(
+        {"hits": [hit(1, "Acme (YC S13) Is Hiring", _tags=["job", "front_page"]), hit(2, _tags=["story"]), hit(3)]}
+    )
+    assert [s.id for s in stories] == ["2", "3"]
+
+
+def test_url_query_leaves_out_the_scheme_and_www():
+    q = params(url_query_url("https://www.example.com/a?b=1"))
+    assert q == {
+        "query": "example.com/a?b=1",
+        "restrictSearchableAttributes": "url",
+        "tags": "story",
+        "hitsPerPage": "20",
+    }
+
+
+def same(url):
+    return url.split("://", 1)[-1].removeprefix("www.").rstrip("/")
+
+
+def test_points_for_url_takes_the_best_matching_story(web):
+    web.json(
+        API + "search?",
+        {
+            "hits": [
+                hit(1, url="https://example.com/a", points=40),
+                hit(2, url="http://www.example.com/a/", points=180),  # the same link, another form
+                hit(3, url="https://example.com/a/more", points=900),  # another page
+                hit(4, url=None, points=999),
+            ]
+        },
+    )
+    assert points_for_url("https://example.com/a", same) == 180
+
+
+def test_points_for_url_is_zero_when_no_story_links_there(web):
+    web.json(API + "search?", {"hits": [hit(1, url="https://other.example/", points=500)]})
+    assert points_for_url("https://example.com/a", same) == 0
+
+
+def test_points_for_url_raises_on_failure(web):
+    web.status(API + "search?", 503)
+    with pytest.raises(urllib.error.HTTPError):
+        points_for_url("https://example.com/a", same)

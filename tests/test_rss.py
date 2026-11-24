@@ -1,5 +1,6 @@
 import re
 import urllib.error
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -429,3 +430,32 @@ def test_select_merges_by_title_with_link_title_dedupe():
     two = item(guid="2", link="https://b.example/2", title="kyiv s bridges", published=2)
     assert list(select(titled, [(A, [one]), (B, [two])]).items) == ["https://a.example/1"]
     assert len(select(Rss("t.xml", "T", (A, B)), [(A, [one]), (B, [two])]).items) == 2
+
+
+def test_parse_keeps_the_whole_text_and_the_excerpt_cuts_it():
+    long = "word " * 200
+    body = (
+        '<rss version="2.0"><channel><title>S</title><item><title>T</title><link>https://n.example/1</link>'
+        f"<description>&lt;p&gt;{long}sponsored by Acme&lt;/p&gt;</description></item></channel></rss>"
+    ).encode()
+    (parsed,) = parse(body, "https://n.example/feed")
+    assert parsed.text.endswith("sponsored by Acme") and len(parsed.text) > 900
+    assert len(parsed.summary) <= 300 and "Acme" not in parsed.summary
+    assert parsed == replace(parsed, text="")  # the text tells no two copies apart
+
+
+SPONSORED = feed(exclude_text=(re.compile(r"(?i)\bsponsored by acme\b"),))
+
+
+def test_exclude_text_searches_the_title_and_the_text():
+    assert verdict(item(text="A study, sponsored by Acme, found…"), SPONSORED) == Drop(
+        "exclude_text", r"(?i)\bsponsored by acme\b"
+    )
+    assert verdict(item(title="Sponsored by Acme: a study", text="body"), SPONSORED) is not None
+    assert verdict(item(text="Acme sponsored nothing here"), SPONSORED) is None
+
+
+def test_exclude_text_judges_items_without_text_on_their_title():
+    # Items from state.json carry no text: they passed exclude_text with it when first seen.
+    assert keep(item(title="A study of digital sovereignty"), SPONSORED)
+    assert not keep(item(title="A study sponsored by Acme"), SPONSORED)

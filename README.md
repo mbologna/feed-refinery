@@ -34,6 +34,8 @@ Each feed carries an icon (`<image>`), so readers show one next to its name.
 
 The counts are a snapshot from when the item was built. A page that blocks bots (`403`), times out or isn't HTML gets an item without the image and excerpt.
 
+Job posts ("Acme (YC S13) Is Hiring") are ads and never become items.
+
 ## RSS items
 
 An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categories, and the author as `dc:creator`. Its description has:
@@ -42,7 +44,7 @@ An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categ
 - the excerpt: the source's description as plain text, cut to about 300 characters, else the page's description;
 - a link to the article.
 
-The article page is fetched only for an item whose source lacks the image or the excerpt, once per item, as for HN stories.
+The article page is fetched only for an item whose source lacks the image or the excerpt, once per item, as for HN stories. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
 
 ## Feeds
 
@@ -55,6 +57,7 @@ The article page is fetched only for an item whose source lacks the image or the
 - `window_hours`: how long a story stays in the feed after it first appeared there (default 48). A story the API still returns for the feed stays however old it is: Algolia's `front_page` tag sometimes lists stories posted days ago.
 - `max_items`: the most items the feed holds (default 150).
 - `ranked`: `true` keeps only stories in HN's current ranking, the ~500 ids of [`topstories.json`](https://github.com/HackerNews/API#new-top-and-best-stories), at any age (default `false`). This is the list [hackernewsbot](https://github.com/phil-r/hackernewsbot) reads; with `min_points = 150`, `top.xml` holds the stories it posts. The bot posts at most one story per 10 minutes; a feed doesn't need that limit.
+- `exclude_titles`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax); a story whose title matches one never enters the feed. The feeds here drop `^Launch HN:`, YC companies announcing a product.
 
 Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its image, excerpt and counts:
 
@@ -62,6 +65,7 @@ Each `[[digest]]` table publishes one item per UTC day, listing that day's top s
 - `top`: stories per day (default 20).
 - `days`: days kept (default 7).
 - `publish_hour`: the UTC hour of the next day when a day appears (default 6), by when late stories have had time to score. A day's list is frozen once published.
+- `exclude_titles`: as for a feed; a matching story never counts among a day's top.
 
 In an HN feed, an item's `pubDate` is when that feed first listed the story, not when it was posted. A story that crosses 100 points a day after it was posted is new to `best.xml` then, and a reader sorting by date shows it at the top. A new feed's first batch is the exception: it carries the stories' post times.
 
@@ -73,8 +77,12 @@ Each `[[rss]]` table publishes items from other feeds:
 - `include_sections`, `exclude_sections`: sections, matched like categories but only against the item's first category, for sites that list the section first and then free-form tags reusing section names. Check the site first: Tech Site lists categories alphabetically, so there the section is in the URL and `exclude_links` is the filter to use.
 - `include_titles`, `exclude_titles`, `include_links`, `exclude_links`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax), each searched anywhere in the item's title or link. Start one with `(?i)` to ignore case.
 - `exclude_authors`: authors, matched against the whole name, ignoring case.
+- `exclude_text`: regular expressions searched in the item's title and the source's whole description, as plain text, when the item first appears. For example, a vendor's studies "sponsored by" it whose titles don't say so.
 - `enrich`: `false` skips fetching article pages, so items carry only what the source gives (default `true`).
+- `exclude_paywalled`: `true` fetches every item's page and hides the items whose [JSON-LD](https://developers.google.com/search/docs/appearance/structured-data/paywalled-content) says `"isAccessibleForFree": false`, anywhere in the page's structured data (default `false`; needs `enrich`). An item is held back until its page has been read, so a paywalled one never shows for a build; one whose page fails three times shows. A page without the marker counts as free. News Site marks its newsletters this way, so one it makes free gets in by itself.
+- `exclude_on_hacker_news`: `true` hides the items whose link was a story in the HN feeds: one the front page, best or top feeds hold, or one HN gave at least the lowest `min_points` of the `[[feed]]` tables (100 here), looked up in Algolia by URL. The lookup runs when an item appears and every 6 hours for its first 2 days, while a story's points still grow; a failed one leaves the item shown and is retried on the next build (default `false`).
 - `max_items`: the most items the feed holds, newest first by the source's dates (default 100).
+- `keep_days`: how long an item stays once no source lists it (default 7), below.
 - `dedupe`: `"link"` (default) or `"link+title"`, below.
 
 The filters apply in two steps. The includes come first: an item must match every include list the table sets, any entry of each. The excludes then drop an item that matches any entry of any exclude list. Changing a filter applies to the items the feed already holds on the next build.
@@ -86,9 +94,10 @@ News Site's feed, as published here:
 file = "newssite.xml"
 title = "News Site: articles"
 source = "https://www.newssite.example/feed"
-exclude_categories = ["peanuts", "foto del giorno", "celebrity"]
-exclude_links = ['^https://www\.newssite\.example/(episodes|newsletter)/']
+exclude_categories = ["peanuts", "foto del giorno", "celebrity", "podcast"]
+exclude_links = ['^https://www\.newssite\.example/(episodes|events)/']
 exclude_titles = ['(?i)^le prime pagine']
+exclude_paywalled = true
 ```
 
 Several sources merged into one feed, as for Tech Site, whose feeds often carry the same story:
@@ -111,7 +120,7 @@ exclude_links = ['^https?://techsite\.example/(tech-policy|space|gaming|cars|cul
 
 `dedupe = "link+title"` would also merge stories published under different URLs.
 
-An item stays while a source lists it, and for 7 days after it first appeared once none does, within `max_items`. A source that fails (an HTTP error, a timeout, a page that isn't a feed) keeps its items while the others refresh.
+An item stays while a source lists it, and for `keep_days` (7 by default) after it first appeared once none does, within `max_items`. A feed whose source lists only a few days and whose filter keeps few items needs a longer `keep_days` not to go empty in a quiet week. A source that fails (an HTTP error, a timeout, a page that isn't a feed) keeps its items while the others refresh.
 
 ### Duplicates
 
@@ -245,8 +254,9 @@ For filtering other feeds:
 - [RSS-Bridge](https://github.com/RSS-Bridge/rss-bridge)'s FilterBridge has no category filter, and the public instances belong to others.
 - [Miniflux](https://miniflux.app/) filters but can't republish a feed.
 - [Feedly](https://feedly.com/)'s mute filters need a Pro+ plan and match keywords only, not categories or links.
+- None of them hides the items of one feed that another already carried (Links stories HN had), or reads a page's paywall marker.
 
-Actions and Pages cost nothing for a public repository, and the HN feeds already had the preview fetching and the state that RSS items need. Checked 2026-11-23.
+Actions and Pages cost nothing for a public repository, and the HN feeds already had the preview fetching and the state that RSS items need. Checked 2026-11-24.
 
 ## Versioning
 

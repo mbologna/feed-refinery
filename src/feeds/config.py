@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import tomllib
 from dataclasses import dataclass, field, fields
@@ -29,6 +31,7 @@ class Feed:
     window_hours: int = 48
     max_items: int = 150
     ranked: bool = False  # only stories in HN's current ranking (topstories)
+    exclude_titles: tuple[re.Pattern[str], ...] = ()  # regular expressions searched in each story's title
 
     @property
     def follows_front_page(self) -> bool:
@@ -44,6 +47,7 @@ class Digest:
     top: int = 20  # stories per day
     days: int = 7  # days kept
     publish_hour: int = 6  # UTC hour of the next day when a day's item appears
+    exclude_titles: tuple[re.Pattern[str], ...] = ()  # stories never counted among a day's top
 
 
 @dataclass(frozen=True)
@@ -65,9 +69,26 @@ class Rss:
     exclude_titles: tuple[re.Pattern[str], ...] = ()
     include_links: tuple[re.Pattern[str], ...] = ()
     exclude_links: tuple[re.Pattern[str], ...] = ()
+    # Searched in the title and the description's text when an item is first seen.
+    exclude_text: tuple[re.Pattern[str], ...] = ()
     enrich: bool = True  # fetch each article's preview for what the source lacks
     max_items: int = 100
     dedupe: str = "link"  # or "link+title"
+    # Hide items whose page declares isAccessibleForFree false; needs enrich.
+    exclude_paywalled: bool = False
+    # Hide items whose link was a story of the [[feed]] tables (see state.check_hacker_news).
+    exclude_on_hacker_news: bool = False
+    keep_days: int = 7  # how long an item no source lists any more stays
+
+    @property
+    def filters_key(self) -> str:
+        """A digest of the options that decide which items pass: it changes when a filter does."""
+        options = {
+            name: sorted(p.pattern if isinstance(p, re.Pattern) else p for p in value)
+            for name in FILTERS
+            if (value := getattr(self, name))
+        }
+        return hashlib.sha256(json.dumps(options, sort_keys=True).encode()).hexdigest()[:16]
 
 
 @dataclass(frozen=True)
@@ -80,11 +101,29 @@ class Config:
     def files(self) -> list[str]:
         return [f.file for f in self.feeds] + [d.file for d in self.digests] + [r.file for r in self.rss]
 
+    @property
+    def hacker_news_floor(self) -> int:
+        """The points that put a story in a [[feed]] by score: the lowest min_points above 0, else 100."""
+        return min((f.min_points for f in self.feeds if f.min_points > 0), default=100)
 
+
+# The [[rss]] options rss.verdict reads.
+FILTERS = (
+    "include_categories",
+    "exclude_categories",
+    "include_sections",
+    "exclude_sections",
+    "exclude_authors",
+    "include_titles",
+    "exclude_titles",
+    "include_links",
+    "exclude_links",
+    "exclude_text",
+)
 REQUIRED = ("file", "title", "tags")
 FLAGS = ("ranked",)
 KNOWN = {f.name for f in fields(Feed)}
-NUMBERS = KNOWN - set(REQUIRED) - set(FLAGS)
+NUMBERS = KNOWN - set(REQUIRED) - set(FLAGS) - {"exclude_titles"}
 DIGEST_KNOWN = {f.name for f in fields(Digest)}
 
 
@@ -109,13 +148,17 @@ def _parse_digest(where: str, table: dict, used: list[str]) -> Digest:
         if value is not None and (not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high):
             raise ConfigError(f"{where}: {key} must be a whole number from {low} to {high}")
     _check_file(where, table["file"], used)
+    if "exclude_titles" in table:
+        table = {**table, "exclude_titles": _patterns(where, "exclude_titles", table["exclude_titles"])}
     return Digest(**table)
 
 
 RSS_KNOWN = {f.name for f in fields(Rss)} | {"source"}  # source: one URL, sources: several
 RSS_WORDS = ("include_categories", "exclude_categories", "include_sections", "exclude_sections", "exclude_authors")
-RSS_PATTERNS = ("include_titles", "exclude_titles", "include_links", "exclude_links")
+RSS_PATTERNS = ("include_titles", "exclude_titles", "include_links", "exclude_links", "exclude_text")
+RSS_FLAGS = ("enrich", "exclude_paywalled", "exclude_on_hacker_news")
 MAX_RSS_ITEMS = 1000
+MAX_KEEP_DAYS = 365
 
 
 def _web_url(value: object) -> bool:
@@ -126,6 +169,16 @@ def _strings(where: str, key: str, value: object) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
         raise ConfigError(f"{where}: {key} must be a list of non-empty strings")
     return value
+
+
+def _patterns(where: str, key: str, value: object) -> tuple[re.Pattern[str], ...]:
+    patterns = []
+    for pattern in _strings(where, key, value):
+        try:
+            patterns.append(re.compile(pattern))
+        except re.error as e:
+            raise ConfigError(f"{where}: {key}: {pattern!r} is not a valid regular expression: {e}") from e
+    return tuple(patterns)
 
 
 def _parse_rss(where: str, table: dict, used: list[str]) -> Rss:
@@ -155,22 +208,20 @@ def _parse_rss(where: str, table: dict, used: list[str]) -> Rss:
             options[key] = frozenset(v.strip().casefold() for v in _strings(where, key, table[key]))
     for key in RSS_PATTERNS:
         if key in table:
-            patterns = []
-            for pattern in _strings(where, key, table[key]):
-                try:
-                    patterns.append(re.compile(pattern))
-                except re.error as e:
-                    raise ConfigError(f"{where}: {key}: {pattern!r} is not a valid regular expression: {e}") from e
-            options[key] = tuple(patterns)
-    if "enrich" in table:
-        if not isinstance(table["enrich"], bool):
-            raise ConfigError(f"{where}: enrich must be true or false")
-        options["enrich"] = table["enrich"]
-    if "max_items" in table:
-        value = table["max_items"]
-        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= MAX_RSS_ITEMS:
-            raise ConfigError(f"{where}: max_items must be a whole number from 1 to {MAX_RSS_ITEMS}")
-        options["max_items"] = value
+            options[key] = _patterns(where, key, table[key])
+    for key in RSS_FLAGS:
+        if key in table:
+            if not isinstance(table[key], bool):
+                raise ConfigError(f"{where}: {key} must be true or false")
+            options[key] = table[key]
+    if options.get("exclude_paywalled") and not options.get("enrich", True):
+        raise ConfigError(f"{where}: exclude_paywalled needs enrich: the article pages say what's paywalled")
+    for key, high in (("max_items", MAX_RSS_ITEMS), ("keep_days", MAX_KEEP_DAYS)):
+        if key in table:
+            value = table[key]
+            if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= high:
+                raise ConfigError(f"{where}: {key} must be a whole number from 1 to {high}")
+            options[key] = value
     if "dedupe" in table:
         if table["dedupe"] not in DEDUPE:
             raise ConfigError(f"{where}: dedupe must be one of: {', '.join(repr(d) for d in DEDUPE)}")
@@ -216,6 +267,8 @@ def parse(text: str) -> Config:
         for key in FLAGS:
             if key in table and not isinstance(table[key], bool):
                 raise ConfigError(f"{where}: {key} must be true or false")
+        if "exclude_titles" in table:
+            table = {**table, "exclude_titles": _patterns(where, "exclude_titles", table["exclude_titles"])}
         feed = Feed(**table)
         _check_file(where, feed.file, used)
         if feed.window_hours < 1 or feed.max_items < 1:

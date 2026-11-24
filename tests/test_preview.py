@@ -119,3 +119,35 @@ def test_script_text_is_never_a_paragraph():
 def test_meta_description_beats_paragraphs():
     html = f'<head><meta name="description" content="Meta"></head><body><article><p>{LONG}</p></article></body>'
     assert parse_preview(html, "https://example.com/").description == "Meta"
+
+
+def ld(*blocks: str) -> str:
+    scripts = "".join(f'<script type="application/ld+json">{b}</script>' for b in blocks)
+    return f"<html><head>{scripts}</head><body><p>{'x' * 100}</p></body></html>"
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        (ld('{"@type": "NewsArticle", "isAccessibleForFree": true}'), False),
+        (ld('{"@type": "NewsArticle", "isAccessibleForFree": false}'), True),
+        (ld('{"@type": "NewsArticle", "isAccessibleForFree": "False"}'), True),  # a string, as many sites write it
+        (ld('{"@type": "NewsArticle", "isAccessibleForFree": "true"}'), False),
+        (ld('{"@type": "NewsArticle", "isAccessibleForFree": "maybe"}'), None),
+        (ld('{"@type": "NewsArticle"}'), None),
+        (ld("not json {"), None),
+        (ld('{"@graph": [{"@type": "WebPage"}, {"hasPart": {"isAccessibleForFree": false}}]}'), True),
+        (ld('[{"isAccessibleForFree": true}]', '{"isAccessibleForFree": false}'), True),  # any false wins
+        (ld("not json {", '{"isAccessibleForFree": true}'), False),
+        ("<html><head></head><body><p>no structured data</p></body></html>", None),
+        ('<script type="text/javascript">{"isAccessibleForFree": false}</script>', None),  # not JSON-LD
+        ('<body><script type="Application/LD+JSON">{"isAccessibleForFree": false}</script></body>', True),
+    ],
+)
+def test_paywalled_from_json_ld(html, expected):
+    assert parse_preview(html, "https://news.example/a").paywalled is expected
+
+
+def test_json_ld_is_never_a_description():
+    preview = parse_preview(ld('{"description": "' + "y" * 120 + '"}'), "https://news.example/a")
+    assert preview.description == "x" * 100

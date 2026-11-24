@@ -27,6 +27,7 @@ MAX_BYTES = 10 * 1024 * 1024
 ACCEPT = "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.1"
 TRACKING = {"fbclid", "gclid", "ref", "mc_cid", "mc_eid"}  # and every utm_* parameter
 TITLE_LIMIT = 200  # for an item with no title, which gets the start of its text instead
+TEXT_LIMIT = 20_000  # of an item's text kept for exclude_text; never stored
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,10 @@ class Item:
     author: str
     summary: str  # the source's description as a plain-text excerpt; empty when it has no text
     image: str | None  # from an enclosure, media:content or media:thumbnail, or the description's first <img>
+    # The description's whole plain text, for exclude_text. Only freshly parsed
+    # items have it: the state doesn't store it, and two copies of a story are
+    # the same item whatever their text.
+    text: str = field(default="", compare=False, repr=False)
 
     @property
     def permalink(self) -> bool:
@@ -140,7 +145,8 @@ def _item(entry, base: str) -> Item | None:
     if not guid:
         return None  # nothing to tell it apart by
     html = entry.get("summary") or ""  # feedparser fills it from <content> when the source has no summary
-    summary = excerpt(plain_text(html)) if html else ""
+    text = plain_text(html)[:TEXT_LIMIT] if html else ""
+    summary = excerpt(text) if text else ""
     title = entry.get("title") or ""
     if entry.get("title_detail", {}).get("type") in ("text/html", "application/xhtml+xml"):
         title = plain_text(title)
@@ -160,6 +166,7 @@ def _item(entry, base: str) -> Item | None:
         author=squash(entry.get("author") or ""),
         summary=summary,
         image=_image(entry, html, link or base),
+        text=text,
     )
 
 
@@ -177,7 +184,10 @@ def verdict(item: Item, feed: Rss) -> Drop | None:
     sets (any entry of each). The excludes then drop whatever matches any
     entry of any of them. Sections match only the first category: the
     section on most WordPress sites, whose other categories and free-form
-    tags may reuse section names.
+    tags may reuse section names. exclude_text searches the title and the
+    description's text; only freshly parsed items carry the text, so an item
+    the state holds is judged on its title, as it passed with its text when
+    first seen.
     """
     categories = [c.casefold() for c in item.categories]
     section = categories[0] if categories else None
@@ -200,6 +210,10 @@ def verdict(item: Item, feed: Rss) -> Drop | None:
         return Drop("exclude_links", pattern.pattern)
     if item.author.casefold() in feed.exclude_authors:
         return Drop("exclude_authors", item.author.casefold())
+    if feed.exclude_text:
+        text = item.title + "\n" + item.text
+        if pattern := next((p for p in feed.exclude_text if p.search(text)), None):
+            return Drop("exclude_text", pattern.pattern)
     return None
 
 
