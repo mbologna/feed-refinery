@@ -4,7 +4,7 @@ import pytest
 from conftest import FakeResponse
 
 from feed_refinery.preview import MAX_BYTES, Preview, fetch_preview, parse_preview
-from feed_refinery.text import excerpt
+from feed_refinery.text import EXCERPT_LIMIT, excerpt
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -37,10 +37,10 @@ def test_page_without_tags():
 
 
 def test_long_description_is_cut_at_a_word():
-    long = "word " * 200
+    long = "word " * 600
     p = parse_preview(f'<meta property="og:description" content="{long}">', "https://example.com/")
     assert p.description.endswith("word…")
-    assert len(p.description) <= 300
+    assert len(p.description) <= EXCERPT_LIMIT
 
 
 def test_excerpt_without_spaces():

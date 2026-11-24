@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 
-EXCERPT_LIMIT = 300
+EXCERPT_LIMIT = 2000
 
 
 class _TextParser(HTMLParser):

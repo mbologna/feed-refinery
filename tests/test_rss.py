@@ -23,6 +23,7 @@ from feed_refinery.rss import (
     select,
     verdict,
 )
+from feed_refinery.text import EXCERPT_LIMIT
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NEWS_SAMPLE = (FIXTURES / "newssite.xml").read_bytes()
@@ -448,14 +449,14 @@ def test_select_merges_by_title_with_link_title_dedupe():
 
 
 def test_parse_keeps_the_whole_text_and_the_excerpt_cuts_it():
-    long = "word " * 200
+    long = "word " * 600
     body = (
         '<rss version="2.0"><channel><title>S</title><item><title>T</title><link>https://n.example/1</link>'
         f"<description>&lt;p&gt;{long}sponsored by Acme&lt;/p&gt;</description></item></channel></rss>"
     ).encode()
     (parsed,) = parse(body, "https://n.example/feed")
-    assert parsed.text.endswith("sponsored by Acme") and len(parsed.text) > 900
-    assert len(parsed.summary) <= 300 and "Acme" not in parsed.summary
+    assert parsed.text.endswith("sponsored by Acme") and len(parsed.text) > EXCERPT_LIMIT
+    assert len(parsed.summary) <= EXCERPT_LIMIT and "Acme" not in parsed.summary
     assert parsed == replace(parsed, text="")  # the text tells no two copies apart
 
 
