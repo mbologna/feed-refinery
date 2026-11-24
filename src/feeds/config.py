@@ -94,6 +94,12 @@ class Rss:
     exclude_on_hacker_news: bool = False
     keep_days: int = 7  # how long an item no source lists any more stays
     json: JsonFields | None = None  # the sources are JSON documents, not RSS or Atom
+    # (source URL, label) pairs: the label goes in front of the titles of that
+    # source's items, for sources whose titles don't say what they are ("v2.15.3").
+    source_titles: tuple[tuple[str, str], ...] = ()
+
+    def label(self, source: str) -> str | None:
+        return dict(self.source_titles).get(source)
 
     @property
     def filters_key(self) -> str:
@@ -243,6 +249,14 @@ def _parse_rss(where: str, table: dict, used: list[str]) -> Rss:
         options["dedupe"] = table["dedupe"]
     if "json" in table:
         options["json"] = _parse_json_fields(where, table["json"])
+    if "source_titles" in table:
+        labels = table["source_titles"]
+        if not isinstance(labels, dict) or not all(isinstance(v, str) and v.strip() for v in labels.values()):
+            raise ConfigError(f'{where}: source_titles must be a table of source URL = "label"')
+        stray = [url for url in labels if url not in sources]
+        if stray:
+            raise ConfigError(f"{where}: source_titles: {stray[0]} is not one of the sources")
+        options["source_titles"] = tuple((url, label.strip()) for url, label in labels.items())
     _check_file(where, table["file"], used)
     return Rss(file=table["file"], title=table["title"], sources=tuple(sources), **options)
 

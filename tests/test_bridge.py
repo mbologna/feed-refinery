@@ -286,3 +286,24 @@ def test_preview_reads_a_json_source():
     ]
     broken = bridge.preview(table, {BLOG: {"body": b"<html>", "content_type": "text/html", "url": BLOG}}, NOW)
     assert broken["sources"][BLOG]["error"].startswith("not JSON")
+
+
+def test_preview_applies_source_titles():
+    source = "https://github.example/a/releases.atom"
+    table = {"file": "r.xml", "title": "R", "source": source, "source_titles": {source: "Alpha"}}
+    body = (
+        b'<feed xmlns="http://www.w3.org/2005/Atom"><title>R</title>'
+        b"<entry><id>1</id><title>v1.0</title><link href='https://github.example/a/v1.0'/></entry></feed>"
+    )
+    result = bridge.preview(table, {source: {"body": body, "content_type": "application/atom+xml", "url": source}}, NOW)
+    assert [s["title"] for s in result["stories"]] == ["Alpha v1.0"]
+
+
+def test_set_adds_a_key_before_a_sub_table():
+    text = (
+        '[[rss]]\nfile = "r.xml"\ntitle = "R"\nsource = "https://a.example/r.atom"\n\n'
+        '[rss.source_titles]\n"https://a.example/r.atom" = "Alpha"\n'
+    )
+    result = bridge.apply(text, [{"op": "set", "kind": "rss", "index": 0, "key": "max_items", "value": 40}])
+    assert result["error"] is None
+    assert 'source = "https://a.example/r.atom"\nmax_items = 40\n' in result["text"]

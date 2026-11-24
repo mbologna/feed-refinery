@@ -486,3 +486,30 @@ def test_a_changed_filter_refetches_in_full_and_judges_held_items_again(tmp_path
     cli.build(config, tmp_path / "c", PAGE, str(tmp_path / "b" / "state.json"), now + dt.timedelta(hours=2))
     assert web.sent[0].get_header("If-none-match") is None
     assert [i.findtext("title") for i in items_of(tmp_path / "c" / "r.xml")] == ["News"]
+
+
+def test_source_titles_label_each_sources_items_before_the_filters(tmp_path, web):
+    config = tmp_path / "feeds.toml"
+    a, b = "https://github.example/a/releases.atom", "https://github.example/b/releases.atom"
+    config.write_text(
+        f'[[rss]]\nfile = "r.xml"\ntitle = "R"\nsources = ["{a}", "{b}"]\n'
+        "exclude_titles = ['^Beta v1.0-rc']\nenrich = false\n"
+        f'[rss.source_titles]\n"{a}" = "Alpha"\n"{b}" = "Beta"\n'
+        # A second feed reads source a too, without labels: the one fetch serves both.
+        f'[[rss]]\nfile = "plain.xml"\ntitle = "P"\nsource = "{a}"\nenrich = false\n'
+    )
+
+    def atom(*versions, repo):
+        entries = "".join(
+            f"<entry><id>{repo}-{v}</id><title>{v}</title><link href='https://github.example/{repo}/{v}'/>"
+            "<updated>2026-11-20T10:00:00Z</updated></entry>"
+            for v in versions
+        )
+        return f'<feed xmlns="http://www.w3.org/2005/Atom"><title>R</title>{entries}</feed>'.encode()
+
+    web.feed(a, atom("v2.15.3", repo="a"), content_type="application/atom+xml")
+    web.feed(b, atom("v1.0-rc1", "v1.0", repo="b"), content_type="application/atom+xml")
+    cli.build(config, tmp_path / "out", PAGE, "", dt.datetime(2026, 11, 24, tzinfo=dt.UTC))
+    assert sorted(i.findtext("title") for i in items_of(tmp_path / "out" / "r.xml")) == ["Alpha v2.15.3", "Beta v1.0"]
+    assert [i.findtext("title") for i in items_of(tmp_path / "out" / "plain.xml")] == ["v2.15.3"]
+    assert web.requests.count(a) == 1
