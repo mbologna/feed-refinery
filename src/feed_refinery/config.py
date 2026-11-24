@@ -58,6 +58,7 @@ class Feed(_Site):
     window_hours: int = 48
     max_items: int = 150
     ranked: bool = False  # only stories in HN's current ranking (topstories)
+    exclude_paywalled: bool = False  # hide stories whose page says it's paywalled
     exclude_titles: tuple[re.Pattern[str], ...] = ()  # regular expressions searched in each story's title
     site: str | None = None  # Hacker News when unset
     icon: str | None = None  # the site's /favicon.ico when unset
@@ -77,6 +78,7 @@ class Digest(_Site):
     days: int = 7  # days kept
     publish_hour: int = 6  # UTC hour of the next day when a day's item appears
     exclude_titles: tuple[re.Pattern[str], ...] = ()  # stories never counted among a day's top
+    exclude_paywalled: bool = False  # leave out the stories whose page says it's paywalled
     site: str | None = None  # Hacker News when unset
     icon: str | None = None
 
@@ -178,7 +180,7 @@ FILTERS = (
     "exclude_text",
 )
 REQUIRED = ("file", "title", "tags")
-FLAGS = ("ranked",)
+FLAGS = ("ranked", "exclude_paywalled")
 URLS = ("site", "icon")  # optional on every kind of table
 KNOWN = {f.name for f in fields(Feed)}
 NUMBERS = KNOWN - set(REQUIRED) - set(FLAGS) - {"exclude_titles"} - set(URLS)
@@ -205,6 +207,8 @@ def _parse_digest(where: str, table: dict, used: list[str]) -> Digest:
         value = table.get(key)
         if value is not None and (not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high):
             raise ConfigError(f"{where}: {key} must be a whole number from {low} to {high}")
+    if "exclude_paywalled" in table and not isinstance(table["exclude_paywalled"], bool):
+        raise ConfigError(f"{where}: exclude_paywalled must be true or false")
     _check_file(where, table["file"], used)
     _check_urls(where, table)
     if "exclude_titles" in table:

@@ -501,17 +501,23 @@ def check_hacker_news(
     return looked_up, failed
 
 
+def held_back(entry: Entry | RssEntry) -> bool:
+    """Whether exclude_paywalled hides a story or an item: its page says it's paywalled, or hasn't been read yet.
+
+    Holding back an unread page means a paywalled story never shows for a run;
+    after MAX_ATTEMPTS failed fetches it shows.
+    """
+    if entry.preview is None:
+        return entry.attempts < MAX_ATTEMPTS
+    return bool(entry.preview.paywalled)
+
+
 def visible(feed: Rss, entry: RssEntry, floor: int) -> bool:
     """Whether a feed shows an item it holds.
 
-    exclude_paywalled hides an item whose page says it's paywalled, and one
-    whose page hasn't been read yet, so a paywalled item never shows for a
-    run; after MAX_ATTEMPTS failed fetches it shows. exclude_on_hacker_news
-    hides an item an HN story with its link gave floor points or more.
+    exclude_paywalled hides the items held_back. exclude_on_hacker_news hides
+    an item an HN story with its link gave floor points or more.
     """
-    if feed.exclude_paywalled:
-        if entry.preview is None and entry.attempts < MAX_ATTEMPTS:
-            return False
-        if entry.preview is not None and entry.preview.paywalled:
-            return False
+    if feed.exclude_paywalled and held_back(entry):
+        return False
     return not (feed.exclude_on_hacker_news and (entry.hn_points or 0) >= floor)

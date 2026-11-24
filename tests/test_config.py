@@ -141,6 +141,28 @@ def test_rss_paywall_flag_and_defaults():
     assert plain.exclude_text == ()
 
 
+def test_hn_tables_take_exclude_paywalled():
+    conf = parse(
+        '[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "story"\nexclude_paywalled = true\n'
+        '[[digest]]\nfile = "d.xml"\ntitle = "D"\nexclude_paywalled = true\n'
+        '[[digest]]\nfile = "e.xml"\ntitle = "E"\n'
+    )
+    assert conf.feeds[0].exclude_paywalled and conf.digests[0].exclude_paywalled
+    assert not conf.digests[1].exclude_paywalled
+
+
+@pytest.mark.parametrize(
+    "toml",
+    [
+        '[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "story"\nexclude_paywalled = "yes"\n',
+        '[[digest]]\nfile = "d.xml"\ntitle = "D"\nexclude_paywalled = 1\n',
+    ],
+)
+def test_exclude_paywalled_must_be_a_flag(toml):
+    with pytest.raises(ConfigError, match="exclude_paywalled must be true or false"):
+        parse(toml)
+
+
 def test_hn_tables_take_exclude_titles():
     conf = parse(
         '[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "story"\nexclude_titles = ["^Launch HN:"]\n'

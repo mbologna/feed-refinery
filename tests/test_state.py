@@ -28,6 +28,7 @@ from feed_refinery.state import (
     fetch_comments,
     fetch_previews,
     fetch_rss_previews,
+    held_back,
     load,
     publish_time,
     update,
@@ -685,6 +686,22 @@ def test_words_survive_a_round_trip():
     state = rss_state(entry)
     loaded = State.from_json(state.to_json()).rss["news.xml"].items["https://news.example/1"]
     assert (loaded.item.words, loaded.preview.words, loaded.words) == (900, 1200, 900)
+
+
+@pytest.mark.parametrize(
+    ("preview", "attempts", "held"),
+    [
+        (None, 0, True),  # not read yet
+        (None, MAX_ATTEMPTS - 1, True),
+        (None, MAX_ATTEMPTS, False),  # never readable: shown
+        (Preview(paywalled=True), 0, True),
+        (Preview(paywalled=False), 0, False),
+        (Preview(), 0, False),  # no marker: free
+    ],
+)
+def test_held_back(preview, attempts, held):
+    assert held_back(Entry(story(1), preview, attempts)) is held
+    assert held_back(RssEntry(item(1), NOW, preview, attempts)) is held
 
 
 def test_rss_previews_fetch_every_page_when_paywalls_are_excluded():

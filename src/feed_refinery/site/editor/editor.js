@@ -41,6 +41,12 @@ const LISTS = {
 };
 const PATTERNS = new Set(["include_titles", "exclude_titles", "include_links", "exclude_links", "exclude_text"]);
 const EXCLUDE_TITLES = { key: "exclude_titles", type: "list" };
+const HN_PAYWALLED = {
+  key: "exclude_paywalled",
+  label: "Hide stories their page marks as paywalled (checked when the feed builds, not in this preview)",
+  type: "flag",
+  default: false,
+};
 const SITE_FIELD = {
   key: "site",
   label: "Website",
@@ -65,6 +71,7 @@ const FIELDS = {
     { key: "window_hours", label: "Window (hours)", type: "number", default: 48 },
     { key: "max_items", label: "Most items", type: "number", default: 150 },
     { key: "ranked", label: "Only stories in HN's current ranking", type: "flag", default: false },
+    HN_PAYWALLED,
     EXCLUDE_TITLES,
     SITE_FIELD,
     ICON_FIELD,
@@ -75,6 +82,7 @@ const FIELDS = {
     { key: "top", label: "Stories per day", type: "number", default: 20 },
     { key: "days", label: "Days kept", type: "number", default: 7 },
     { key: "publish_hour", label: "Publish hour (UTC)", type: "number", default: 6 },
+    HN_PAYWALLED,
     EXCLUDE_TITLES,
     SITE_FIELD,
     ICON_FIELD,

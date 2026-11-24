@@ -60,6 +60,7 @@ A `feeds.toml` lists the feeds; [`examples/feeds.toml`](examples/feeds.toml) has
 - `max_items`: the most items the feed holds (default 150).
 - `ranked`: `true` keeps only stories in HN's current ranking, the ~500 ids of [`topstories.json`](https://github.com/HackerNews/API#new-top-and-best-stories), at any age (default `false`). This is the list [hackernewsbot](https://github.com/phil-r/hackernewsbot) reads; with `min_points = 150`, `top.xml` holds the stories it posts. The bot posts at most one story per 10 minutes; a feed doesn't need that limit.
 - `exclude_titles`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax); a story whose title matches one never enters the feed, such as `^Launch HN:`, YC companies announcing a product.
+- `exclude_paywalled`: `true` hides the stories whose page's [JSON-LD](https://developers.google.com/search/docs/appearance/structured-data/paywalled-content) says `"isAccessibleForFree": false` (default `false`). Every story's page is read for its preview anyway; a story is held back until its page has been read, and one whose page fails three times shows. A page without the marker counts as free.
 - `site`: the website the feed is about (default `https://news.ycombinator.com/`). It is the channel's `<link>`, which Feedly takes a feed's icon from, so each feed shows its source's icon rather than one shared by every feed here.
 - `icon`: the channel's `<image>`, for readers that show it (default the site's `/favicon.ico`).
 
@@ -70,6 +71,7 @@ Each `[[digest]]` table publishes one item per UTC day, listing that day's top s
 - `days`: days kept (default 7).
 - `publish_hour`: the UTC hour of the next day when a day appears (default 6), by when late stories have had time to score. A day's list is frozen once published.
 - `exclude_titles`: as for a feed; a matching story never counts among a day's top.
+- `exclude_paywalled`: as for a feed; a paywalled story is left out of its day's list, which then has fewer than `top` stories.
 
 In an HN feed, an item's `pubDate` is when that feed first listed the story, not when it was posted. A story that crosses 100 points a day after it was posted is new to `best.xml` then, and a reader sorting by date shows it at the top. A new feed's first batch is the exception: it carries the stories' post times.
 

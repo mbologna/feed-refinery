@@ -194,6 +194,47 @@ def test_digest_publishes_due_days_once(tmp_path, web, capsys):
     assert "digest.xml" in (tmp_path / "again" / "index.html").read_text()
 
 
+PAYWALLED = '<script type="application/ld+json">{"isAccessibleForFree": false}</script>'
+WALLED_CONFIG = """
+[[feed]]
+file = "walled.xml"
+title = "Free only"
+tags = "story"
+exclude_paywalled = true
+
+[[feed]]
+file = "open.xml"
+title = "Everything"
+tags = "story"
+
+[[digest]]
+file = "digest.xml"
+title = "Daily"
+top = 3
+days = 2
+exclude_paywalled = true
+"""
+
+
+def test_hn_feeds_and_digests_can_hide_paywalled_stories(tmp_path, web):
+    config = tmp_path / "feeds.toml"
+    config.write_text(WALLED_CONFIG)
+    t = int(dt.datetime.now(dt.UTC).timestamp())
+    hits = {"hits": [hit(1, created=t - 60), hit(2, created=t - 60), hit(3, created=t - 60)]}
+    web.json(API + "search?", hits)
+    web.json(API + "search_by_date?", hits)
+    web.html("https://example.com/1", OG.format(n=1))
+    web.html("https://example.com/2", PAYWALLED)
+    web.status("https://example.com/3", 503)  # not read yet: held back until it is, or fails for good
+    web.json(FIREBASE + "item/", {"kids": []})
+    out = tmp_path / "out"
+    assert build(config, out, "--previous-state", "") == 0
+    assert guids(out / "walled.xml") == ["1"]
+    assert sorted(guids(out / "open.xml")) == ["1", "2", "3"]
+    days = [d.findtext("description") for d in ET.parse(out / "digest.xml").getroot().findall("channel/item")]
+    assert days and all("Story 1" in d and "Story 2" not in d and "Story 3" not in d for d in days)
+
+
 def test_stories_no_longer_listed_get_fresh_counts(tmp_path, web, capsys):
     config = tmp_path / "feeds.toml"
     config.write_text('[[feed]]\nfile = "f.xml"\ntitle = "F"\ntags = "front_page"\n')

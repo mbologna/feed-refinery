@@ -138,6 +138,8 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
     for feed in feeds:
         seen = current.feeds[feed.file]
         items = [(current.stories[sid], t) for sid, t in seen.items()]
+        if feed.exclude_paywalled:
+            items = [(e, t) for e, t in items if not state.held_back(e)]
         document = render_feed(feed, items, feed_url(page_url, feed.file), now)
         (output_dir / feed.file).write_bytes(document)
         images = sum(1 for e, _ in items if e.preview and e.preview.image)
@@ -149,10 +151,12 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
             print(f"::warning::{feed.file}: only {images} of {len(items)} items have an image")
     for digest in conf.digests:
         days = sorted(current.digests.get(digest.file, {}).items(), reverse=True)
-        entries = [
-            (dt.date.fromisoformat(day), [current.stories[sid] for sid in ids if sid in current.stories])
-            for day, ids in days
-        ]
+        entries: list[tuple[dt.date, list[state.Entry]]] = []
+        for iso, ids in days:
+            day_entries = [current.stories[sid] for sid in ids if sid in current.stories]
+            if digest.exclude_paywalled:
+                day_entries = [e for e in day_entries if not state.held_back(e)]
+            entries.append((dt.date.fromisoformat(iso), day_entries))
         document = render_digest(digest, entries, feed_url(page_url, digest.file), now)
         (output_dir / digest.file).write_bytes(document)
         print(f"{digest.file}: {len(entries)} days")

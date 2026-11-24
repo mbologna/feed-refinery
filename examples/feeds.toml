@@ -21,6 +21,8 @@
 #                 topstories.json), at any age (default false)
 #   exclude_titles  drop stories whose title matches any of these regular
 #                 expressions
+#   exclude_paywalled  true: hide stories whose page marks them as not free
+#                 (JSON-LD isAccessibleForFree false; default false)
 #   site          the website the feed is about, the channel's <link>: Feedly
 #                 shows its icon (default https://news.ycombinator.com/)
 #   icon          the channel's <image> for other readers (default the
@@ -57,6 +59,8 @@ window_hours = 72
 #                 07:00 in Rome in winter, by when late stories have scored)
 #   exclude_titles  stories whose title matches any of these never count
 #                 among a day's top
+#   exclude_paywalled  true: leave out stories whose page marks them as not
+#                 free; a day then lists fewer than top (default false)
 [[digest]]
 file = "digest.xml"
 title = "Hacker News: daily digest"
