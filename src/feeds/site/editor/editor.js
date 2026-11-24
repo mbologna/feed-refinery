@@ -37,6 +37,13 @@ const LISTS = {
 };
 const PATTERNS = new Set(["include_titles", "exclude_titles", "include_links", "exclude_links", "exclude_text"]);
 const EXCLUDE_TITLES = { key: "exclude_titles", type: "list" };
+const SITE_FIELD = {
+  key: "site",
+  label: "Website",
+  type: "text",
+  help: "The site the feed is about: readers show its icon. Default: Hacker News, or the first source's site",
+};
+const ICON_FIELD = { key: "icon", label: "Icon", type: "text", help: "Default: the website's /favicon.ico" };
 const FILE = { key: "file", label: "File", type: "text", help: "Lowercase, ending in .xml" };
 const TITLE = { key: "title", label: "Title", type: "text" };
 const FIELDS = {
@@ -55,6 +62,8 @@ const FIELDS = {
     { key: "max_items", label: "Most items", type: "number", default: 150 },
     { key: "ranked", label: "Only stories in HN's current ranking", type: "flag", default: false },
     EXCLUDE_TITLES,
+    SITE_FIELD,
+    ICON_FIELD,
   ],
   digest: [
     FILE,
@@ -63,6 +72,8 @@ const FIELDS = {
     { key: "days", label: "Days kept", type: "number", default: 7 },
     { key: "publish_hour", label: "Publish hour (UTC)", type: "number", default: 6 },
     EXCLUDE_TITLES,
+    SITE_FIELD,
+    ICON_FIELD,
   ],
   rss: [
     FILE,
@@ -105,6 +116,8 @@ const FIELDS = {
       default: "link",
       choices: { link: "Same link or guid", "link+title": "Same link, guid or title" },
     },
+    SITE_FIELD,
+    ICON_FIELD,
   ],
 };
 

@@ -1,6 +1,7 @@
 import datetime as dt
 import re
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 
 import pytest
 
@@ -45,7 +46,7 @@ def story(**kw):
 
 
 def render(entries):
-    doc = render_feed(FEED, entries, "https://site.example/frontpage.xml", "https://site.example/", NOW)
+    doc = render_feed(FEED, entries, "https://site.example/frontpage.xml", NOW)
     return doc, ET.fromstring(doc)
 
 
@@ -187,8 +188,10 @@ def test_categories_and_channel_image():
     entry = Entry(story(title="Show HN: A thing"), Preview())
     _, root = render([(entry, CREATED)])
     channel = root.find("channel")
-    assert channel.findtext("image/url") == "https://site.example/icon.png"
-    assert channel.findtext("image/link") == "https://site.example/"
+    # Hacker News's site and icon, so readers show its icon rather than one shared by every feed.
+    assert channel.findtext("link") == "https://news.ycombinator.com/"
+    assert channel.findtext("image/url") == "https://news.ycombinator.com/favicon.ico"
+    assert channel.findtext("image/link") == "https://news.ycombinator.com/"
     assert [c.text for c in channel.find("item").findall("category")] == ["Show HN", "example.com"]
 
 
@@ -208,9 +211,7 @@ def test_digest_document():
     day = dt.date(2026, 11, 18)
     first = Entry(story(id="1", title="One & only"), Preview("https://i.example/1.png", "Desc", "Site"))
     second = Entry(story(id="2", url=None, text="Ask text", author="", points=1, comments=1), None)
-    doc = render_digest(
-        digest, [(day, [first, second])], "https://site.example/digest.xml", "https://site.example/", NOW
-    )
+    doc = render_digest(digest, [(day, [first, second])], "https://site.example/digest.xml", NOW)
     item = ET.fromstring(doc).find("channel/item")
     assert item.findtext("title") == "Hacker News digest: Wed 18 Nov 2026"
     assert item.findtext("link") == "https://news.ycombinator.com/front?day=2026-11-18"
@@ -226,7 +227,7 @@ def test_digest_document():
 
 
 def test_digest_entry_without_text_or_image():
-    doc = render_digest(Digest("d.xml", "D"), [(dt.date(2026, 11, 18), [Entry(story(), Preview())])], "u", "p", NOW)
+    doc = render_digest(Digest("d.xml", "D"), [(dt.date(2026, 11, 18), [Entry(story(), Preview())])], "u", NOW)
     item = ET.fromstring(doc).find("channel/item")
     assert item.find(f"{{{MEDIA}}}thumbnail") is None
     assert "<p><b>example.com</b></p>" in item.findtext("description")
@@ -257,7 +258,7 @@ def rss_item(**kw):
 
 
 def render_rss(entries, feed=NEWS_SAMPLE):
-    doc = render_rss_feed(feed, entries, "https://site.example/newssite.xml", "https://site.example/", NOW)
+    doc = render_rss_feed(feed, entries, "https://site.example/newssite.xml", NOW)
     return doc, ET.fromstring(doc)
 
 
@@ -270,6 +271,8 @@ def test_rss_items_keep_the_sources_fields():
         "News Site: articles, from https://www.newssite.example/feed, with each article's image and excerpt"
     )
     assert channel.find(f"{{{ATOM}}}link").get("href") == "https://site.example/newssite.xml"
+    assert channel.findtext("link") == channel.findtext("image/link") == "https://www.newssite.example/"  # the source's site
+    assert channel.findtext("image/url") == "https://www.newssite.example/favicon.ico"
     item = channel.find("item")
     assert item.findtext("title") == "Cosa dice il film del “pandorogate” & <altro>"
     assert item.findtext("link") == LINK
@@ -351,3 +354,12 @@ def test_page_describes_rss_feeds():
     )
     page = render_page([(filtered, "https://site.example/newssite.xml")])
     assert '<a href="https://site.example/newssite.xml">News Site</a>' in page
+
+
+def test_site_and_icon_can_be_set():
+    feed = replace(NEWS_SAMPLE, site="https://www.example.org/", icon="https://www.example.org/assets/img/favicon.png")
+    channel = render_rss([], feed)[1].find("channel")
+    assert channel.findtext("link") == channel.findtext("image/link") == "https://www.example.org/"
+    assert channel.findtext("image/url") == "https://www.example.org/assets/img/favicon.png"
+    digest = ET.fromstring(render_digest(Digest("d.xml", "D", site="https://links.example.org/"), [], "u", NOW))
+    assert digest.findtext("channel/image/url") == "https://links.example.org/favicon.ico"

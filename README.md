@@ -58,6 +58,8 @@ The article page is fetched only for an item whose source lacks the image or the
 - `max_items`: the most items the feed holds (default 150).
 - `ranked`: `true` keeps only stories in HN's current ranking, the ~500 ids of [`topstories.json`](https://github.com/HackerNews/API#new-top-and-best-stories), at any age (default `false`). This is the list [hackernewsbot](https://github.com/phil-r/hackernewsbot) reads; with `min_points = 150`, `top.xml` holds the stories it posts. The bot posts at most one story per 10 minutes; a feed doesn't need that limit.
 - `exclude_titles`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax); a story whose title matches one never enters the feed. The feeds here drop `^Launch HN:`, YC companies announcing a product.
+- `site`: the website the feed is about (default `https://news.ycombinator.com/`). It is the channel's `<link>`, which Feedly takes a feed's icon from, so each feed shows its source's icon rather than one shared by every feed here.
+- `icon`: the channel's `<image>`, for readers that show it (default the site's `/favicon.ico`).
 
 Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its image, excerpt and counts:
 
@@ -82,6 +84,7 @@ Each `[[rss]]` table publishes items from other feeds:
 - `enrich`: `false` skips fetching article pages, so items carry only what the source gives (default `true`).
 - `exclude_paywalled`: `true` fetches every item's page and hides the items whose [JSON-LD](https://developers.google.com/search/docs/appearance/structured-data/paywalled-content) says `"isAccessibleForFree": false`, anywhere in the page's structured data (default `false`; needs `enrich`). An item is held back until its page has been read, so a paywalled one never shows for a build; one whose page fails three times shows. A page without the marker counts as free. News Site marks its newsletters this way, so one it makes free gets in by itself.
 - `exclude_on_hacker_news`: `true` hides the items whose link was a story in the HN feeds: one the front page, best or top feeds hold, or one HN gave at least the lowest `min_points` of the `[[feed]]` tables (100 here), looked up in Algolia by URL. The lookup runs when an item appears and every 6 hours for its first 2 days, while a story's points still grow; a failed one leaves the item shown and is retried on the next build (default `false`).
+- `site`, `icon`: as for an HN feed; `site` defaults to the first source's site (its scheme and host). Set it when that host isn't the site readers know (`feeds.techsite.example`, `github.com`), and `icon` when the site's `/favicon.ico` is missing or wrong.
 - `source_titles`: a `[rss.source_titles]` table of source URL = label. The label goes in front of the titles of that source's items, unless a title already starts with it, before the filters see them: a GitHub release feed titles its items with a bare version (`v2.15.3`), so a feed merging several products needs `Alpha v2.15.3`. The editor has no field for it: edit it in the file.
 - `max_items`: the most items the feed holds, newest first by the source's dates (default 100).
 - `keep_days`: how long an item stays once no source lists it (default 7), below.
