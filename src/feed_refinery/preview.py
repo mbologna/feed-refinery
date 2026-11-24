@@ -26,7 +26,9 @@ class Preview:
     # From the page's JSON-LD isAccessibleForFree: True when it says false
     # anywhere, False when it says true, None when it says nothing.
     paywalled: bool | None = None
-    words: int | None = None  # in the article's paragraphs, for its reading time; None when it has none
+    # In the article's paragraphs, for its reading time. None when they weren't
+    # counted: a preview fetched before counting began, or one with nothing fetched.
+    words: int | None = None
 
 
 PARAGRAPH_MIN = 80  # the first paragraph kept: shorter ones are bylines, captions and the like
@@ -186,7 +188,7 @@ def parse_preview(html: str, base_url: str) -> Preview:
         description=excerpt(description) if description else None,
         site_name=excerpt(site_name, 80) if site_name else None,
         paywalled=paywalled(parser.json_ld),
-        words=(parser.content_words if parser.content_paragraphs else parser.words) or None,
+        words=parser.content_words if parser.content_paragraphs else parser.words,
     )
 
 

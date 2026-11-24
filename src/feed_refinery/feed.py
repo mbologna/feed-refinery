@@ -70,6 +70,13 @@ def reading_time(words: int | None, preview: Preview | None) -> str | None:
     return f"{max(1, round(words / WORDS_PER_MINUTE))} min read"
 
 
+def story_reading_time(entry: Entry) -> str | None:
+    """The linked article's reading time, or for a text post (Ask HN and the like) its text's."""
+    if entry.story.url:
+        return reading_time(entry.preview.words if entry.preview else None, entry.preview)
+    return reading_time(len(entry.story.text.split()), None)
+
+
 def item_html(entry: Entry, now: int) -> str:
     """The item body: image, excerpt, the submitter's text, the top comment, then links, reading time, counts and age.
 
@@ -91,7 +98,7 @@ def item_html(entry: Entry, now: int) -> str:
         parts.append(paragraphs(c.text, f"💬 <b>{escape(c.author)}</b>: ", f' <a href="{escape(c.url)}">→</a>'))
     source = preview.site_name or domain(story.url) or "Article"
     stats = [f'<a href="{escape(story.url)}">{escape(source)}</a>'] if story.url else []
-    if minutes := reading_time(preview.words, preview):
+    if minutes := story_reading_time(entry):
         stats.append(minutes)
     stats.append(f'<a href="{escape(story.comments_url)}">{plural(story.comments, "comment")}</a>')
     stats.append(plural(story.points, "point"))
@@ -155,9 +162,11 @@ def digest_entry_html(rank: int, entry: Entry) -> str:
         lead = f"<b>{escape(source)}</b>" + (" · " if text else "") if source else ""
         parts.append(f"<p>{lead}{escape(text)}</p>")
     comments = plural(story.comments, "comment")
+    minutes = story_reading_time(entry)
     parts.append(
         f'<p>{plural(story.points, "point")} · <a href="{escape(story.comments_url)}">{comments}</a>'
         + (f" · by {escape(story.author)}" if story.author else "")
+        + (f" · {minutes}" if minutes else "")
         + "</p>"
     )
     return "\n".join(parts)

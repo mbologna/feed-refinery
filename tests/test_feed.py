@@ -216,6 +216,19 @@ def test_item_shows_the_reading_time_after_the_article_link():
     assert html.startswith("<p>Text</p>")  # what readers show in a list
 
 
+def test_a_text_posts_reading_time_is_its_texts():
+    html = item_html(Entry(story(url=None, text="word " * 460), Preview()), CREATED)
+    assert '2 min read · <a href="https://news.ycombinator.com/item?id=42">37 comments</a>' in html
+    assert "min read" not in item_html(Entry(story(url=None, text="Short question?"), Preview()), CREATED)
+
+
+def test_digest_lines_show_the_reading_time():
+    entry = Entry(story(), Preview(description="Desc", words=1150))
+    doc = render_digest(Digest("d.xml", "D"), [(dt.date(2026, 11, 18), [entry])], "u", NOW)
+    html = ET.fromstring(doc).find("channel/item").findtext("description")
+    assert "37 comments</a> · by pg · 5 min read</p>" in html
+
+
 def test_categories_and_channel_image():
     entry = Entry(story(title="Show HN: A thing"), Preview())
     _, root = render([(entry, CREATED)])

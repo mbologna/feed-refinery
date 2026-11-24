@@ -29,11 +29,11 @@ def test_twitter_fallback_skips_non_web_images():
 
 def test_plain_description_fallback():
     p = parse_preview('<head><meta name="description" content="Plain"></head>', "https://example.com/")
-    assert p == Preview(description="Plain")
+    assert p == Preview(description="Plain", words=0)
 
 
 def test_page_without_tags():
-    assert parse_preview("<html><body>nothing</body></html>", "https://example.com/") == Preview()
+    assert parse_preview("<html><body>nothing</body></html>", "https://example.com/") == Preview(words=0)
 
 
 def test_long_description_is_cut_at_a_word():
@@ -137,7 +137,7 @@ def test_words_count_the_articles_paragraphs():
     assert parse_preview(html, "https://example.com/").words == words + 150  # every paragraph, past the excerpt's
     html = f"<body><p>{LONG}</p><p>Short.</p><nav><p>{LONG}</p></nav></body>"
     assert parse_preview(html, "https://example.com/").words == words + 1  # anywhere, without an article
-    assert parse_preview('<meta name="description" content="D">', "https://example.com/").words is None
+    assert parse_preview('<meta name="description" content="D">', "https://example.com/").words == 0  # counted
 
 
 def test_a_longer_opening_beats_the_meta_description():

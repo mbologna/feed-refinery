@@ -25,7 +25,7 @@ Each item of an HN feed has:
 
 Each feed carries an icon (`<image>`), so readers show one next to its name.
 
-The reading time counts the words of the article's paragraphs at 230 a minute. It's left out under 200 words (usually a page its scripts fill in) and for a page that says it's paywalled, where only the lede is there to count.
+The reading time counts the words of the article's paragraphs at 230 a minute, or of the post's own text for Ask HN and other text posts. It's left out under 200 words (usually a page its scripts fill in, or a short question) and for a page that says it's paywalled, where only the lede is there to count. Pages read before word counting began are read again, at most 100 a build, so older items get one too; a page that fails then keeps its preview without one.
 
 The counts are a snapshot from when the item was built. A page that blocks bots (`403`), times out or isn't HTML gets an item without the image and excerpt.
 
@@ -42,7 +42,7 @@ Excerpts, here and in HN items, keep their paragraphs. One that's too long ends 
 
 A last line links to the article, labelled with its site name (or domain), with its reading time and its points on HN when known. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`), else from the article page, as for HN items; a description alone says nothing of the article's length. Readers build an item's preview text from the start of its description, and the item's own link already leads to the article, so the line is left out after an excerpt of up to 500 characters when it has nothing to add. An item with no excerpt always gets it, so its description isn't empty.
 
-The article page is fetched only for an item whose source lacks the image or has only a teaser (under 500 characters of text), once per item, as for HN stories. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
+The article page is fetched once per item, as for HN stories, unless the source has the image, more than a teaser (500 characters of text) and the whole article, which gives the reading time: in practice, for every item of a source without full content. Without `enrich`, only items with full content get a reading time. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
 
 ## Reading in NetNewsWire
 
@@ -64,7 +64,7 @@ A `feeds.toml` lists the feeds; [`examples/feeds.toml`](examples/feeds.toml) has
 - `site`: the website the feed is about (default `https://news.ycombinator.com/`). It is the channel's `<link>`, which Feedly takes a feed's icon from, so each feed shows its source's icon rather than one shared by every feed here.
 - `icon`: the channel's `<image>`, for readers that show it (default the site's `/favicon.ico`).
 
-Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its image, the first paragraph of its excerpt (up to about 500 characters) and counts:
+Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its image, the first paragraph of its excerpt (up to about 500 characters), its counts and reading time:
 
 - `file`, `title`: as for a feed.
 - `top`: stories per day (default 20).
