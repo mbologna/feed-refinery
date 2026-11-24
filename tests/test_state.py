@@ -1,5 +1,7 @@
 import datetime as dt
+import re
 import urllib.error
+from dataclasses import replace
 
 import pytest
 from conftest import FakeResponse
@@ -11,14 +13,16 @@ from feeds.rss import Fetched, Item
 from feeds.source import Story
 from feeds.state import (
     COMMENT_INTERVAL,
+    HN_RECHECK,
+    HN_RECHECK_FOR,
     MAX_ATTEMPTS,
-    RSS_KEEP,
     Entry,
     RssEntry,
     RssFeed,
     Source,
     State,
     add_digest_day,
+    check_hacker_news,
     digest_days_due,
     fetch_comments,
     fetch_previews,
@@ -27,6 +31,7 @@ from feeds.state import (
     publish_time,
     update,
     update_rss,
+    visible,
 )
 
 HOUR = 3600
@@ -466,16 +471,29 @@ def test_one_failing_source_keeps_its_items_while_the_others_refresh():
     assert feed.last_ok(NEWS) == NOW
 
 
+WEEK = 7 * 86400
+
+
 def test_items_no_source_lists_leave_after_a_week():
     state = State()
     feed = Rss("r.xml", "R", (A,))
     update_rss(state, [feed], {"r.xml": {A: ok(item(1))}}, NOW)
-    update_rss(state, [feed], {"r.xml": {A: ok(item(2))}}, NOW + RSS_KEEP)
+    update_rss(state, [feed], {"r.xml": {A: ok(item(2))}}, NOW + WEEK)
     assert set(state.rss["r.xml"].items) == {"https://news.example/1", "https://news.example/2"}
-    update_rss(state, [feed], {"r.xml": {A: ok(item(2))}}, NOW + RSS_KEEP + 1)
+    update_rss(state, [feed], {"r.xml": {A: ok(item(2))}}, NOW + WEEK + 1)
     assert set(state.rss["r.xml"].items) == {"https://news.example/2"}
     # One a failing source still lists stays however old.
-    update_rss(state, [feed], {"r.xml": {A: ValueError("not a feed")}}, NOW + 3 * RSS_KEEP)
+    update_rss(state, [feed], {"r.xml": {A: ValueError("not a feed")}}, NOW + 3 * WEEK)
+    assert set(state.rss["r.xml"].items) == {"https://news.example/2"}
+
+
+def test_keep_days_holds_items_longer():
+    state = State()
+    feed = Rss("r.xml", "R", (A,), keep_days=60)
+    update_rss(state, [feed], {"r.xml": {A: ok(item(1))}}, NOW)
+    update_rss(state, [feed], {"r.xml": {A: ok(item(2))}}, NOW + 60 * 86400)
+    assert set(state.rss["r.xml"].items) == {"https://news.example/1", "https://news.example/2"}
+    update_rss(state, [feed], {"r.xml": {A: ok(item(2))}}, NOW + 60 * 86400 + 1)
     assert set(state.rss["r.xml"].items) == {"https://news.example/2"}
 
 
@@ -531,7 +549,7 @@ def test_version_1_state_loads_with_no_rss_feeds_and_keeps_the_rest():
     assert state.stories["1"].preview == Preview("https://e.example/i.png", "D", None)
     assert state.stories["1"].comment_checked == 7
     assert state.feeds == {"f.xml": {"1": 100}} and state.digests == {"d.xml": {"2026-11-18": ["1"]}}
-    assert b'"version":2' in state.to_json()
+    assert b'"version":3' in state.to_json()
 
 
 def rss_state(*entries, file="news.xml"):
@@ -605,3 +623,150 @@ def test_rss_previews_skip_feeds_without_enrich_and_share_one_fetch_per_link():
     assert asked == ["https://news.example/1"]
     assert state.rss["other.xml"].items["k"].excerpt == "OG"
     assert state.rss["plain.xml"].items["k"].preview is None
+
+
+def test_rss_state_keeps_hn_lookups_and_never_the_item_text():
+    entry = RssEntry(item(1), NOW, Preview(paywalled=True), 1, [A], hn_points=120, hn_checked=NOW)
+    state = rss_state(replace(entry, item=replace(entry.item, text="the whole description")))
+    raw = state.to_json()
+    assert b"the whole description" not in raw and b'"text"' not in raw
+    loaded = State.from_json(raw)
+    assert loaded.rss["news.xml"].items["https://news.example/1"] == entry
+
+
+def test_version_2_rss_items_load_with_hn_and_paywall_unknown():
+    old = (
+        b'{"version":2,"stories":{},"feeds":{},"digests":{},"rss":{"r.xml":{"sources":{},"items":{'
+        b'"https://news.example/1":{"item":{"guid":"g","link":"https://news.example/1","title":"T","published":1,'
+        b'"categories":[],"author":"","summary":"","image":null},"first_seen":5,'
+        b'"preview":{"image":null,"description":"D","site_name":null},"attempts":0,"from_sources":[]}}}}}'
+    )
+    entry = State.from_json(old).rss["r.xml"].items["https://news.example/1"]
+    assert (entry.hn_points, entry.hn_checked, entry.preview.paywalled) == (None, 0, None)
+
+
+def test_rss_previews_fetch_every_page_when_paywalls_are_excluded():
+    complete = RssEntry(item(1, image="https://i.example/1.png", summary="Text"), NOW)
+    no_link = RssEntry(item(2, link=None, guid="n2"), NOW)
+    state = rss_state(complete, no_link)
+    asked = []
+
+    def fetch(url):
+        asked.append(url)
+        return Preview(paywalled=True)
+
+    walled = replace(NEWS, exclude_paywalled=True)
+    assert fetch_rss_previews(state, [walled], fetch) == (1, [])
+    assert asked == ["https://news.example/1"]
+    assert complete.preview == Preview(paywalled=True) and complete.excerpt == "Text"
+    assert no_link.preview == Preview()
+
+
+LINKS = Rss("links.xml", "Links", (A,), exclude_on_hacker_news=True)
+
+
+def test_hacker_news_check_matches_held_stories_then_looks_up_the_rest():
+    held = RssEntry(item(1, link="http://www.news.example/1/"), NOW)  # the HN story's link, another form
+    other = RssEntry(item(2), NOW)
+    no_link = RssEntry(item(3, link=None, guid="n3"), NOW)
+    state = rss_state(held, other, no_link, file="links.xml")
+    state.stories["9"] = Entry(story(9, url="https://news.example/1"))
+    asked = []
+
+    def lookup(link, same):
+        asked.append((link, same(link)))
+        return 40
+
+    assert check_hacker_news(state, [LINKS], lookup, 100, NOW) == (1, [])
+    assert asked == [("https://news.example/2", "news.example/2")]
+    assert (held.hn_points, held.hn_checked) == (100, NOW)
+    assert (other.hn_points, other.hn_checked) == (40, NOW)
+    assert (no_link.hn_points, no_link.hn_checked) == (None, 0)
+
+
+def test_hacker_news_lookups_repeat_on_the_first_days_only():
+    fresh = RssEntry(item(1), NOW, hn_points=40, hn_checked=NOW)
+    state = rss_state(fresh, file="links.xml")
+    calls = []
+
+    def lookup(link, same):
+        calls.append(link)
+        return 150 if len(calls) == 1 else 90  # points never go down: the best seen counts
+
+    check_hacker_news(state, [LINKS], lookup, 100, NOW + HN_RECHECK - 1)
+    assert calls == []
+    check_hacker_news(state, [LINKS], lookup, 100, NOW + HN_RECHECK)
+    assert calls == ["https://news.example/1"] and fresh.hn_points == 150
+    check_hacker_news(state, [LINKS], lookup, 100, NOW + 2 * HN_RECHECK)
+    assert fresh.hn_points == 150 and fresh.hn_checked == NOW + 2 * HN_RECHECK
+    check_hacker_news(state, [LINKS], lookup, 100, NOW + HN_RECHECK_FOR)
+    assert len(calls) == 2  # past the first days: never again
+
+
+def test_a_failed_hacker_news_lookup_is_retried_and_other_feeds_are_left_alone():
+    entry = RssEntry(item(1), NOW)
+    plain = RssEntry(item(2), NOW)
+    state = rss_state(entry, file="links.xml")
+    state.rss["news.xml"] = RssFeed({}, {"https://news.example/2": plain})
+
+    def broken(link, same):
+        raise urllib.error.URLError("down")
+
+    looked_up, failed = check_hacker_news(state, [LINKS, NEWS], broken, 100, NOW)
+    assert looked_up == 0 and failed == [("https://news.example/1", "URLError: <urlopen error down>")]
+    assert (entry.hn_points, entry.hn_checked) == (None, 0)
+    assert (plain.hn_points, plain.hn_checked) == (None, 0)
+    assert visible(LINKS, entry, 100)  # a failed lookup leaves the item shown
+
+
+@pytest.mark.parametrize(
+    ("entry", "shown"),
+    [
+        (RssEntry(item(1), NOW), False),  # not read yet: held back for a run
+        (RssEntry(item(1), NOW, attempts=MAX_ATTEMPTS), True),  # unreadable: shown
+        (RssEntry(item(1), NOW, Preview(paywalled=True)), False),
+        (RssEntry(item(1), NOW, Preview(paywalled=False)), True),
+        (RssEntry(item(1), NOW, Preview()), True),  # no marker: shown
+    ],
+)
+def test_paywalled_items_are_hidden(entry, shown):
+    assert visible(replace(NEWS, exclude_paywalled=True), entry, 100) is shown
+    assert visible(NEWS, entry, 100)
+
+
+@pytest.mark.parametrize(("points", "shown"), [(None, True), (0, True), (99, True), (100, False), (500, False)])
+def test_items_hn_gave_the_floor_are_hidden(points, shown):
+    entry = RssEntry(item(1), NOW, hn_points=points)
+    assert visible(LINKS, entry, 100) is shown
+    assert visible(NEWS, entry, 100)
+
+
+def test_a_held_item_whose_fresh_copy_a_filter_drops_leaves():
+    state = State()
+    feed = Rss("r.xml", "R", (A,))
+    study = replace(item(1), text="A study, sponsored by Acme, found…")
+    update_rss(state, [feed], {"r.xml": {A: ok(study, item(2))}}, NOW)
+    assert len(state.rss["r.xml"].items) == 2
+    state = State.from_json(state.to_json())  # as a build reads it: without the text
+    # exclude_text added later: the source lists the study again, with its text.
+    stricter = replace(feed, exclude_text=(re.compile("(?i)sponsored by acme"),))
+    update_rss(state, [stricter], {"r.xml": {A: ok(study, item(2))}}, NOW + HOUR)
+    assert list(state.rss["r.xml"].items) == ["https://news.example/2"]
+
+
+def test_a_held_story_a_new_exclude_titles_matches_leaves():
+    state = State()
+    launch = replace(story(1), title="Launch HN: Acme")
+    update(state, [FRONT], {"frontpage.xml": [launch, story(2)]}, NOW)
+    launch_free = replace(FRONT, exclude_titles=(re.compile("^Launch HN:"),))
+    update(state, [launch_free], {"frontpage.xml": []}, NOW + HOUR)
+    assert list(state.feeds["frontpage.xml"]) == ["2"]
+
+
+def test_a_story_one_source_drops_and_another_keeps_stays():
+    state = State()
+    feed = Rss("r.xml", "R", (A, B), exclude_categories=frozenset({"bits"}))
+    update_rss(state, [feed], {"r.xml": {A: ok(item(1)), B: ok(item(2))}}, NOW)
+    state = State.from_json(state.to_json())
+    update_rss(state, [feed], {"r.xml": {A: ok(item(1, categories=["Bits"])), B: ok(item(1), item(2))}}, NOW + HOUR)
+    assert set(state.rss["r.xml"].items) == {"https://news.example/1", "https://news.example/2"}

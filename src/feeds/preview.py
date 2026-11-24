@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import urllib.request
+from collections.abc import Iterator
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
@@ -21,11 +23,15 @@ class Preview:
     image: str | None = None
     description: str | None = None
     site_name: str | None = None
+    # From the page's JSON-LD isAccessibleForFree: True when it says false
+    # anywhere, False when it says true, None when it says nothing.
+    paywalled: bool | None = None
 
 
 PARAGRAPH_MIN = 80  # shorter paragraphs are bylines, captions and the like
 SKIPPED = {"script", "style", "noscript", "nav", "header", "footer", "aside", "form"}
 CONTENT = {"article", "main"}
+JSON_LD = "application/ld+json"
 
 
 class _PageParser(HTMLParser):
@@ -45,6 +51,8 @@ class _PageParser(HTMLParser):
         self.buffer: list[str] | None = None  # the open <p>'s text
         self.first_paragraph: str | None = None
         self.content_paragraph: str | None = None
+        self.json_ld: list[str] = []  # the text of each <script type="application/ld+json">
+        self.ld_buffer: list[str] | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag == "body":
@@ -55,6 +63,8 @@ class _PageParser(HTMLParser):
             content = (a.get("content") or "").strip()
             if key and content:
                 self.meta.setdefault(key, content)
+        if tag == "script" and any(k == "type" and (v or "").strip().lower() == JSON_LD for k, v in attrs):
+            self.ld_buffer = []
         if tag in SKIPPED:
             self.skip += 1
         elif tag in CONTENT:
@@ -67,6 +77,9 @@ class _PageParser(HTMLParser):
             self.buffer.append(" ")
 
     def handle_endtag(self, tag: str) -> None:
+        if tag == "script" and self.ld_buffer is not None:
+            self.json_ld.append("".join(self.ld_buffer))
+            self.ld_buffer = None
         if tag == "head":
             self.in_head = False
         elif tag in SKIPPED:
@@ -78,6 +91,8 @@ class _PageParser(HTMLParser):
             self._close_paragraph()
 
     def handle_data(self, data: str) -> None:
+        if self.ld_buffer is not None:
+            self.ld_buffer.append(data)
         if self.buffer is not None and not self.skip:
             self.buffer.append(data)
 
@@ -96,6 +111,35 @@ class _PageParser(HTMLParser):
     def close(self) -> None:
         super().close()
         self._close_paragraph()
+
+
+def _free_flags(data: object) -> Iterator[bool]:
+    """Every isAccessibleForFree in a JSON-LD document, at any depth (@graph, hasPart, …)."""
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key == "isAccessibleForFree":
+                if isinstance(value, bool):
+                    yield value
+                elif isinstance(value, str) and value.strip().lower() in ("true", "false"):
+                    yield value.strip().lower() == "true"
+            else:
+                yield from _free_flags(value)
+    elif isinstance(data, list):
+        for value in data:
+            yield from _free_flags(value)
+
+
+def paywalled(blocks: list[str]) -> bool | None:
+    """Whether JSON-LD blocks mark the page as paywalled; None when none says. A block that isn't JSON is skipped."""
+    flags: list[bool] = []
+    for block in blocks:
+        try:
+            flags.extend(_free_flags(json.loads(block)))
+        except ValueError:
+            continue
+    if not flags:
+        return None
+    return not all(flags)
 
 
 def _first(meta: dict[str, str], keys: tuple[str, ...]) -> str | None:
@@ -117,6 +161,7 @@ def parse_preview(html: str, base_url: str) -> Preview:
         image=image,
         description=excerpt(description) if description else None,
         site_name=excerpt(site_name, 80) if site_name else None,
+        paywalled=paywalled(parser.json_ld),
     )
 
 

@@ -368,3 +368,121 @@ def test_check_config_fails_with_the_builds_message(tmp_path, capsys):
     assert capsys.readouterr().err == f"{config}: digest #1: best.xml is already used by another feed\n"
     assert cli.main(["check-config", str(tmp_path / "missing.toml")]) == 2
     assert capsys.readouterr().err == f"{tmp_path / 'missing.toml'}: No such file or directory\n"
+
+
+PROMO_CONFIG = """
+[[feed]]
+file = "frontpage.xml"
+title = "Front"
+tags = "front_page"
+exclude_titles = ['^Launch HN:']
+
+[[feed]]
+file = "best.xml"
+title = "Best"
+tags = "story"
+min_points = 100
+
+[[rss]]
+file = "links.xml"
+title = "Links minus HN"
+source = "https://links.example/top.rss"
+exclude_on_hacker_news = true
+
+[[rss]]
+file = "paper.xml"
+title = "Paper"
+source = "https://paper.example/feed"
+exclude_paywalled = true
+"""
+
+
+def rss_doc(*links):
+    body = "".join(
+        f"<item><title>Item {link.rsplit('/', 1)[1]}</title><link>{link}</link>"
+        f"<description>About {link}</description></item>"
+        for link in links
+    )
+    return f'<rss version="2.0"><channel><title>S</title>{body}</channel></rss>'.encode()
+
+
+def test_build_hides_hn_duplicates_paywalled_items_jobs_and_launches(tmp_path, web, capsys):
+    config = tmp_path / "feeds.toml"
+    config.write_text(PROMO_CONFIG)
+    now = dt.datetime(2026, 11, 24, 12, 0, tzinfo=dt.UTC)
+    t = int(now.timestamp())
+    web.json(
+        API + "search?tags=front_page",
+        {
+            "hits": [
+                hit(1, url="https://shared.example/1", created=t - 600),
+                hit(2, "Launch HN: Acme (YC W26) – Widgets for everyone", created=t - 600),
+                hit(3, "Acme (YC S13) Is Hiring", created=t - 600, _tags=["job", "front_page"]),
+            ]
+        },
+    )
+    web.json(API + "search_by_date?", {"hits": []})
+    web.json(FIREBASE + "item/", {"kids": []})
+    for n in (1, 2):
+        web.html(f"https://example.com/{n}", OG.format(n=n))
+    # Links: 1 is on the HN front page, 2 had 300 points on HN some days ago, 3 never reached HN.
+    links = ["https://shared.example/1", "https://links.example/2", "https://links.example/3"]
+    web.feed("https://links.example/top.rss", rss_doc(*links))
+    web.json(API + "search?query=links.example%2F2", {"hits": [hit(20, url=links[1], points=300)]})
+    web.json(API + "search?query=links.example%2F3", {"hits": []})
+    for link in links:
+        web.html(link, OG.format(n=link[-1]))
+    # The paper: one article free, one paywalled, one whose page never answers.
+    web.feed("https://paper.example/feed", rss_doc(*(f"https://paper.example/{n}" for n in (1, 2, 3))))
+    web.html("https://paper.example/1", '<script type="application/ld+json">{"isAccessibleForFree": true}</script>')
+    web.html("https://paper.example/2", '<script type="application/ld+json">{"isAccessibleForFree": false}</script>')
+    web.status("https://paper.example/3", 503)
+    out = tmp_path / "public"
+
+    cli.build(config, out, PAGE, "", now)
+    log = capsys.readouterr().out
+    assert [i.findtext("title") for i in items_of(out / "frontpage.xml")] == ["Story 1"]
+    assert [i.findtext("link") for i in items_of(out / "links.xml")] == ["https://links.example/3"]
+    assert "hacker news: looked up 2 links, 0 failed" in log
+    assert [i.findtext("link") for i in items_of(out / "paper.xml")] == ["https://paper.example/1"]
+    health = json.loads((out / "health.json").read_text())
+    assert health["rss"]["links.xml"]["items"] == 1 and health["rss"]["paper.xml"]["items"] == 1
+
+    # Two runs later the unanswered page has used up its attempts: it shows, as nothing says it's paywalled.
+    previous = out / "state.json"
+    for hours in (1, 2):
+        nxt = tmp_path / f"run{hours}"
+        cli.build(config, nxt, PAGE, str(previous), now + dt.timedelta(hours=hours))
+        previous = nxt / "state.json"
+    assert sorted(i.findtext("link") for i in items_of(nxt / "paper.xml")) == [
+        "https://paper.example/1",
+        "https://paper.example/3",
+    ]
+
+
+def test_a_changed_filter_refetches_in_full_and_judges_held_items_again(tmp_path, web, capsys):
+    config = tmp_path / "feeds.toml"
+    table = '[[rss]]\nfile = "r.xml"\ntitle = "R"\nsource = "https://s.example/feed"\nenrich = false\n'
+    config.write_text(table)
+    body = (
+        b'<rss version="2.0"><channel><title>S</title>'
+        b"<item><title>Study</title><link>https://s.example/1</link><description>Sponsored by Acme</description></item>"
+        b"<item><title>News</title><link>https://s.example/2</link><description>Plain</description></item>"
+        b"</channel></rss>"
+    )
+    web.feed("https://s.example/feed", body, {"ETag": '"e1"'})
+    now = dt.datetime(2026, 11, 24, tzinfo=dt.UTC)
+    cli.build(config, tmp_path / "a", PAGE, "", now)
+    assert len(items_of(tmp_path / "a" / "r.xml")) == 2
+
+    # Same filters: a conditional GET.
+    web.sent.clear()
+    cli.build(config, tmp_path / "b", PAGE, str(tmp_path / "a" / "state.json"), now + dt.timedelta(hours=1))
+    assert web.sent[0].get_header("If-none-match") == '"e1"'
+
+    # A new filter: the source answers in full and the held study leaves at once.
+    config.write_text(table + "exclude_text = ['(?i)sponsored by']\n")
+    web.sent.clear()
+    cli.build(config, tmp_path / "c", PAGE, str(tmp_path / "b" / "state.json"), now + dt.timedelta(hours=2))
+    assert web.sent[0].get_header("If-none-match") is None
+    assert [i.findtext("title") for i in items_of(tmp_path / "c" / "r.xml")] == ["News"]

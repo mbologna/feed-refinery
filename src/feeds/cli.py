@@ -25,18 +25,24 @@ def feed_url(page_url: str, file: str) -> str:
 
 
 def fetch_rss(feeds: list[config.Rss], current: state.State) -> dict[str, dict[str, rss.Fetched | Exception]]:
-    """Every RSS feed's sources, with conditional GETs. A source two feeds share is fetched once per validator pair."""
+    """Every RSS feed's sources, with conditional GETs unless the feed's filters changed.
+
+    A source two feeds share is fetched once per validator pair.
+    """
     shared: dict[tuple[str, str | None, str | None], rss.Fetched | Exception] = {}
     results: dict[str, dict[str, rss.Fetched | Exception]] = {}
     for feed in feeds:
         known = current.rss.get(feed.file) or state.RssFeed()
         outcomes = results[feed.file] = {}
+        # A changed filter: every source answers in full, so every item is judged again.
+        changed = known.filters != feed.filters_key
         for url in feed.sources:
             source_state = known.sources.get(url) or state.Source()
-            key = (url, source_state.etag, source_state.last_modified)
+            etag, modified = (None, None) if changed else (source_state.etag, source_state.last_modified)
+            key = (url, etag, modified)
             if key not in shared:
                 try:
-                    shared[key] = rss.fetch(url, source_state.etag, source_state.last_modified)
+                    shared[key] = rss.fetch(url, etag, modified)
                 # Any error: the source keeps the items it had while the others refresh.
                 except Exception as e:
                     shared[key] = e
@@ -49,6 +55,11 @@ def fetch_rss(feeds: list[config.Rss], current: state.State) -> dict[str, dict[s
                 passed = sum(1 for item in outcome.items if rss.keep(item, feed))
                 print(f"{feed.file}: {url}: {len(outcome.items)} items, {passed} pass the filters")
     return results
+
+
+def wanted(stories: list[source.Story], exclude_titles: tuple) -> list[source.Story]:
+    """The stories whose title matches none of exclude_titles."""
+    return [s for s in stories if not any(p.search(s.title) for p in exclude_titles)]
 
 
 def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now: dt.datetime) -> None:
@@ -74,9 +85,9 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
             urls = source.ids_query_urls(ranked, feed.tags, source.count_filters(feed))
             rank = {str(sid): n for n, sid in enumerate(ranked)}
             matched = sorted((s for url in urls for s in stories(url)), key=lambda s: rank.get(s.id, len(rank)))
-            results[feed.file] = matched[: feed.max_items]
+            results[feed.file] = wanted(matched, feed.exclude_titles)[: feed.max_items]
         else:
-            results[feed.file] = stories(source.query_url(feed, now))
+            results[feed.file] = wanted(stories(source.query_url(feed, now)), feed.exclude_titles)
 
     # Stories a feed still holds but the API no longer lists for it (off the
     # front page, unranked): refresh their counts, 100 per request.
@@ -92,7 +103,8 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
     for digest in conf.digests:
         for day in state.digest_days_due(current, digest, stamp):
             start = int(dt.datetime.combine(day, dt.time(), dt.UTC).timestamp())
-            state.add_digest_day(current, digest, day, stories(source.day_query_url(start, start + 86400)))
+            day_stories = wanted(stories(source.day_query_url(start, start + 86400)), digest.exclude_titles)
+            state.add_digest_day(current, digest, day, day_stories)
             print(f"{digest.file}: published {day.isoformat()}")
     state.update(current, feeds, results, stamp, conf.digests)
     fetched, failed = state.fetch_previews(current, preview.fetch_preview)
@@ -108,6 +120,12 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
     if conf.rss:
         fetched, failed = state.fetch_rss_previews(current, conf.rss, preview.fetch_preview)
         print(f"rss previews: fetched {fetched} new, {len(failed)} failed")
+        for url, error in failed:
+            print(f"  {url}: {error}")
+    floor = conf.hacker_news_floor
+    if any(f.exclude_on_hacker_news for f in conf.rss):
+        looked_up, failed = state.check_hacker_news(current, conf.rss, source.points_for_url, floor, stamp)
+        print(f"hacker news: looked up {looked_up} links, {len(failed)} failed")
         for url, error in failed:
             print(f"  {url}: {error}")
 
@@ -137,7 +155,7 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
         health["digests"][digest.file] = {"days": len(entries)}
     for rss_feed in conf.rss:
         known = current.rss[rss_feed.file]
-        rss_entries = list(known.items.values())
+        rss_entries = [e for e in known.items.values() if state.visible(rss_feed, e, floor)]
         document = render_rss_feed(rss_feed, rss_entries, feed_url(page_url, rss_feed.file), page_url, now)
         (output_dir / rss_feed.file).write_bytes(document)
         images = sum(1 for e in rss_entries if e.image)

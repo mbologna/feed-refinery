@@ -30,8 +30,13 @@ const LISTS = {
   include_links: ["Include links", "Keep only items whose link matches one of these regular expressions."],
   exclude_links: ["Exclude links", "Drop items whose link matches any of these."],
   exclude_authors: ["Exclude authors", "Drop items by these authors (the whole name, any case)."],
+  exclude_text: [
+    "Exclude text",
+    "Drop items whose title or description text matches any of these regular expressions, when first seen.",
+  ],
 };
-const PATTERNS = new Set(["include_titles", "exclude_titles", "include_links", "exclude_links"]);
+const PATTERNS = new Set(["include_titles", "exclude_titles", "include_links", "exclude_links", "exclude_text"]);
+const EXCLUDE_TITLES = { key: "exclude_titles", type: "list" };
 const FILE = { key: "file", label: "File", type: "text", help: "Lowercase, ending in .xml" };
 const TITLE = { key: "title", label: "Title", type: "text" };
 const FIELDS = {
@@ -49,6 +54,7 @@ const FIELDS = {
     { key: "window_hours", label: "Window (hours)", type: "number", default: 48 },
     { key: "max_items", label: "Most items", type: "number", default: 150 },
     { key: "ranked", label: "Only stories in HN's current ranking", type: "flag", default: false },
+    EXCLUDE_TITLES,
   ],
   digest: [
     FILE,
@@ -56,6 +62,7 @@ const FIELDS = {
     { key: "top", label: "Stories per day", type: "number", default: 20 },
     { key: "days", label: "Days kept", type: "number", default: 7 },
     { key: "publish_hour", label: "Publish hour (UTC)", type: "number", default: 6 },
+    EXCLUDE_TITLES,
   ],
   rss: [
     FILE,
@@ -68,7 +75,20 @@ const FIELDS = {
       type: "flag",
       default: true,
     },
+    {
+      key: "exclude_paywalled",
+      label: "Hide articles their page marks as paywalled (checked when the feed builds, not in this preview)",
+      type: "flag",
+      default: false,
+    },
+    {
+      key: "exclude_on_hacker_news",
+      label: "Hide stories the Hacker News feeds already carried (checked when the feed builds, not in this preview)",
+      type: "flag",
+      default: false,
+    },
     { key: "max_items", label: "Most items", type: "number", default: 100 },
+    { key: "keep_days", label: "Days an item stays once no source lists it", type: "number", default: 7 },
     {
       key: "dedupe",
       label: "Duplicates",
