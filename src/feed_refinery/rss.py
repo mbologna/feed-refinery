@@ -243,8 +243,13 @@ def _item(entry, base: str) -> Item | None:
     html = entry.get("summary") or ""  # feedparser fills it from <content> when the source has no summary
     prose = plain_paragraphs(html)
     text = squash(prose)[:TEXT_LIMIT]
-    content = (entry.get("content") or [{}])[0].get("value")
-    words = len((prose if content == html else plain_text(content)).split()) if content else None
+    # The full content (content:encoded, Atom <content>), when the source has
+    # it besides a shorter description: the excerpt, the image and the word
+    # count come from it, while exclude_text searches the description.
+    content = (entry.get("content") or [{}])[0].get("value") or ""
+    full = prose if content == html else plain_paragraphs(content)
+    if len(full) > len(prose):
+        prose, html = full, html + content  # the description's first image still comes first
     title = entry.get("title") or ""
     if entry.get("title_detail", {}).get("type") in ("text/html", "application/xhtml+xml"):
         title = plain_text(title)
@@ -265,7 +270,7 @@ def _item(entry, base: str) -> Item | None:
         summary=excerpt(prose),
         image=_image(entry, html, link or base),
         text=text,
-        words=words or None,
+        words=len(full.split()) or None,
     )
 
 

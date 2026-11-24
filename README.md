@@ -35,8 +35,8 @@ Job posts ("Acme (YC S13) Is Hiring") are ads and never become items.
 
 An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categories, and the author as `dc:creator`. Its description has:
 
-- the image: the source's (an image enclosure, `media:content`, the first `<img>` in its description that isn't declared smaller than 100 pixels, or `media:thumbnail`, in that order: thumbnails are often small crops), else the article page's, as for HN items, also as `media:thumbnail`;
-- the excerpt: the source's description as plain text or the page's excerpt, whichever is longer, cut to about 2,000 characters.
+- the image: the source's (an image enclosure, `media:content`, the first `<img>` in its description, then in its full content, that isn't declared smaller than 100 pixels, or `media:thumbnail`, in that order: thumbnails are often small crops), else the article page's, as for HN items, also as `media:thumbnail`;
+- the excerpt: the source's text as plain text, which is its full content (`content:encoded`, Atom `<content>`) when that's longer than its description, or the page's excerpt, whichever is longer, cut to about 2,000 characters.
 
 Excerpts, here and in HN items, keep their paragraphs. One that's too long ends with its last whole paragraph or sentence when that keeps at least half of it, else at a word, with an ellipsis.
 
