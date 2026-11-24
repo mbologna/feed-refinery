@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from feeds.config import ConfigError, Digest, Feed, JsonFields, Rss, load, parse
+from feed_refinery.config import ConfigError, Digest, Feed, JsonFields, Rss, load, parse
 
 EXAMPLE_CONFIG = Path(__file__).parent.parent / "examples" / "feeds.toml"
 

@@ -182,7 +182,7 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
     (output_dir / STATE_NAME).write_bytes(current.to_json())
     # The icons: the feeds' <image> and the index page's favicon. The editor,
     # in site/editor/, is published by CI with the package's wheel.
-    for asset in importlib.resources.files("feeds").joinpath("site").iterdir():
+    for asset in importlib.resources.files("feed_refinery").joinpath("site").iterdir():
         if asset.is_file():
             (output_dir / asset.name).write_bytes(asset.read_bytes())
     published: list[config.Feed | config.Digest | config.Rss] = [*feeds, *conf.digests, *conf.rss]
@@ -291,7 +291,7 @@ def kv_get(key: str, path: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="feeds", description=__doc__)
+    parser = argparse.ArgumentParser(prog="feed-refinery", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
     b = sub.add_parser("build", help="write the feeds, state.json and index.html")

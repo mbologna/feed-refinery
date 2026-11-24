@@ -67,7 +67,7 @@ jobs:
           python-version: "3.15"
 
       - name: Check the example feeds.toml
-        run: uv run --locked --no-dev feeds check-config examples/feeds.toml
+        run: uv run --locked --no-dev feed-refinery check-config examples/feeds.toml
 
   # The web editor in Chromium: Pyodide from jsDelivr and the packages from
   # PyPI, the wheel built here, GitHub and the source relay mocked. The
@@ -149,17 +149,17 @@ jobs:
           python-version: "3.15"
 
       - name: Read the previous state
-        run: uv run --locked --no-dev feeds kv-get state.json previous-state.json
+        run: uv run --locked --no-dev feed-refinery kv-get state.json previous-state.json
 
       - name: Build
         run: >-
-          uv run --locked --no-dev feeds build --quiet --config config/feeds.toml
+          uv run --locked --no-dev feed-refinery build --quiet --config config/feeds.toml
           --previous-state previous-state.json --output-dir public
 
       - name: Publish to KV
-        run: uv run --locked --no-dev feeds kv-publish public --config config/feeds.toml
+        run: uv run --locked --no-dev feed-refinery kv-publish public --config config/feeds.toml
 
-  # The web editor at /editor/, alone on Pages: its files, the feeds wheel it
+  # The web editor at /editor/, alone on Pages: its files, the feed-refinery wheel it
   # runs in the browser, and the locked versions of the packages that wheel
   # needs from PyPI. tests/test_editor_browser.py assembles it the same way.
   editor-site:
@@ -182,10 +182,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir site
-          cp -R src/feeds/site/editor site/editor
-          cp src/feeds/site/favicon.svg site/editor/
+          cp -R src/feed_refinery/site/editor site/editor
+          cp src/feed_refinery/site/favicon.svg site/editor/
           uv build --wheel --out-dir dist
-          cp dist/feeds-*.whl site/editor/feeds.whl
+          cp dist/feed_refinery-*.whl site/editor/feed_refinery.whl
           uv export --frozen --only-group pyodide --no-hashes --no-annotate --no-header > site/editor/requirements.txt
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

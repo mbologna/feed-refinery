@@ -1,11 +1,11 @@
-"""The editor's Python side (src/feeds/site/editor/bridge.py), as Pyodide runs it in the browser."""
+"""The editor's Python side (src/feed_refinery/site/editor/bridge.py), as Pyodide runs it in the browser."""
 
 import json
 from pathlib import Path
 
 import pytest
 
-from feeds.site.editor import bridge
+from feed_refinery.site.editor import bridge
 
 FIXTURES = Path(__file__).parent / "fixtures"
 # A copy of feeds.toml as it was when the editor was written: the real file

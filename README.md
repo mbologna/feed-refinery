@@ -1,6 +1,6 @@
-# feeds
+# feed-refinery
 
-[![CI](https://github.com/mbologna/feeds/actions/workflows/ci.yml/badge.svg)](https://github.com/mbologna/feeds/actions/workflows/ci.yml)
+[![CI](https://github.com/mbologna/feed-refinery/actions/workflows/ci.yml/badge.svg)](https://github.com/mbologna/feed-refinery/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 RSS feeds whose items carry each article's image and excerpt, from two kinds of source:
@@ -158,7 +158,7 @@ The token stays in the browser's local storage for `feeds.michelebologna.net`; *
 **Saving** shows the diff of `feeds.toml` and a commit message, `chore(config): …`, which you can edit; its first line must fit in 72 characters. The editor then:
 
 1. creates a branch `editor/…` from the commit it loaded, commits `feeds.toml` to it and opens a pull request;
-2. follows it: the config repository's workflow checks the file with `feeds check-config`, merges the pull request (a private repository on GitHub's free plan has no auto-merge) and dispatches this repository's build;
+2. follows it: the config repository's workflow checks the file with `feed-refinery check-config`, merges the pull request (a private repository on GitHub's free plan has no auto-merge) and dispatches this repository's build;
 3. waits for the build's `health.json` to show a build after the merge, a minute or two.
 
 The feeds Worker serves the editor's three endpoints on the same host, each with the token as `Authorization: Bearer <token>`, and answers only a token that can push to the config repository:
@@ -169,11 +169,11 @@ The feeds Worker serves the editor's three endpoints on the same host, each with
 
 The Worker also sends a Content-Security-Policy for `/editor/*`; the browser test runs the editor under the same policy (`CSP` in `tests/test_editor_browser.py`).
 
-The same Python code as the build runs in the browser: [Pyodide](https://pyodide.org/), pinned and loaded from jsDelivr with Subresource Integrity hashes, runs in a Web Worker the feeds wheel and the locked versions of feedparser and tomlkit (`uv.lock`'s `pyodide` group), which CI publishes to GitHub Pages with the editor, alone, as `feeds.whl` and `requirements.txt`. `src/feeds/site/editor/bridge.py` loads, edits and previews: it edits with [tomlkit](https://github.com/python-poetry/tomlkit), which keeps the file's comments and layout, and filters and merges with `rss.select`, the function the build uses.
+The same Python code as the build runs in the browser: [Pyodide](https://pyodide.org/), pinned and loaded from jsDelivr with Subresource Integrity hashes, runs in a Web Worker the feed-refinery wheel and the locked versions of feedparser and tomlkit (`uv.lock`'s `pyodide` group), which CI publishes to GitHub Pages with the editor, alone, as `feed_refinery.whl` and `requirements.txt`. `src/feed_refinery/site/editor/bridge.py` loads, edits and previews: it edits with [tomlkit](https://github.com/python-poetry/tomlkit), which keeps the file's comments and layout, and filters and merges with `rss.select`, the function the build uses.
 
 ## How it's published
 
-The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pull request, checks `examples/feeds.toml` with `feeds check-config`, and tests the editor in Chromium. On `main` it then builds the feeds, writes them to Workers KV, and deploys the editor to GitHub Pages:
+The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pull request, checks `examples/feeds.toml` with `feed-refinery check-config`, and tests the editor in Chromium. On `main` it then builds the feeds, writes them to Workers KV, and deploys the editor to GitHub Pages:
 
 - on every push;
 - every 30 minutes (at :07 and :37), dispatched by a Cron Trigger on the Worker that serves the feeds: GitHub's own schedule ran hours late, or not at all. Those runs skip the tests;
@@ -184,12 +184,12 @@ The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pul
 This repository and its Actions logs are public, and the feed list isn't, so:
 
 - the build checks out the private `feeds.toml` with a read-only deploy key (secret `FEEDS_CONFIG_DEPLOY_KEY`);
-- `feeds build --quiet` prints totals only: no feed, source or URL, even in an error;
-- the feeds, `state.json` and `health.json` go to Workers KV (`feeds kv-publish`), never to Pages or an artifact. The editor is the only thing on Pages.
+- `feed-refinery build --quiet` prints totals only: no feed, source or URL, even in an error;
+- the feeds, `state.json` and `health.json` go to Workers KV (`feed-refinery kv-publish`), never to Pages or an artifact. The editor is the only thing on Pages.
 
 A build:
 
-1. Reads the previous run's `state.json` from KV (`feeds kv-get`). It holds every listed story with its preview, and when each feed first listed it.
+1. Reads the previous run's `state.json` from KV (`feed-refinery kv-get`). It holds every listed story with its preview, and when each feed first listed it.
 2. Asks the [Algolia HN API](https://hn.algolia.com/api), the one hnrss uses, for each feed's stories. Feeds that share a query share one request. A ranked feed first reads `topstories.json` from the [HN API](https://github.com/HackerNews/API), then asks Algolia for those ids, 100 per request.
 3. Then refreshes the counts of the stories a feed still holds but the API no longer lists for it (off the front page, out of the ranking), 100 per request.
 4. Fetches the previews still missing, eight pages at a time: the first 512 KB of each, with a 10-second timeout. It retries a failed page on the next two runs, except for permanent errors such as `403` and `404`.
@@ -210,12 +210,12 @@ After publishing, the workflow checks `https://feeds.michelebologna.net/health`,
 The script needs Python 3.15 or later (uv, below, downloads it if the machine has none), [feedparser](https://github.com/kurtmckee/feedparser), and network access to the HN APIs, the RSS sources and the linked pages. It reads the feed list from `feeds.toml` in the working directory, so start from a copy of the example. With [uv](https://docs.astral.sh/uv/), which installs feedparser too:
 
 ```sh
-curl -o feeds.toml https://raw.githubusercontent.com/mbologna/feeds/main/examples/feeds.toml
-uvx --from git+https://github.com/mbologna/feeds feeds build \
+curl -o feeds.toml https://raw.githubusercontent.com/mbologna/feed-refinery/main/examples/feeds.toml
+uvx --from git+https://github.com/mbologna/feed-refinery feed-refinery build \
   --output-dir public --page-url https://feeds.example.com/ --previous-state public/state.json
 ```
 
-From a clone, `uv run feeds build` takes the same options. The `build` options:
+From a clone, `uv run feed-refinery build` takes the same options. The `build` options:
 
 - `--config`: the feed list (default `feeds.toml`);
 - `--output-dir`: where to write the feeds, `index.html`, `health.json`, `state.json` and the icons (default `public`);
@@ -229,18 +229,18 @@ Serve the folder with any static web server, such as nginx, Caddy or `python3 -m
 
 ```cron
 # Every 30 minutes, at :07 and :37
-7,37 * * * *  cd /srv/feeds && uvx --from git+https://github.com/mbologna/feeds feeds build --output-dir /var/www/feeds --page-url https://feeds.example.com/ --previous-state /var/www/feeds/state.json
+7,37 * * * *  cd /srv/feeds && uvx --from git+https://github.com/mbologna/feed-refinery feed-refinery build --output-dir /var/www/feeds --page-url https://feeds.example.com/ --previous-state /var/www/feeds/state.json
 ```
 
-Give cron the full path to `uvx` if its `PATH` does not include it. `feeds check --page-url https://feeds.example.com/`, run from the same directory, exits with status 1 when a configured feed is missing or was built more than 3 hours ago (`--max-age-hours`). `feeds check-config feeds.toml` exits with status 2 and the build's message when the file wouldn't build.
+Give cron the full path to `uvx` if its `PATH` does not include it. `feed-refinery check --page-url https://feeds.example.com/`, run from the same directory, exits with status 1 when a configured feed is missing or was built more than 3 hours ago (`--max-age-hours`). `feed-refinery check-config feeds.toml` exits with status 2 and the build's message when the file wouldn't build.
 
 ### With a private list, on Workers KV
 
 As this repository runs it, for free: the list in a private repository, the build in a public one's Actions (free minutes), the feeds in Workers KV behind a Worker that checks a token.
 
-- **The list:** a private repository with `feeds.toml` and a workflow that runs `feeds check-config` on every change. The build reads it with a read-only deploy key: its private half is the secret `FEEDS_CONFIG_DEPLOY_KEY` here.
-- **KV:** a namespace, and a Cloudflare API token that can only edit Workers KV. Here they're the repository variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_KV_NAMESPACE` and the secret `CLOUDFLARE_KV_TOKEN`; `feeds kv-get` and `feeds kv-publish` read the same names from the environment.
-- **The build:** `feeds kv-get state.json previous.json`, then `feeds build --quiet --config config/feeds.toml --previous-state previous.json`, then `feeds kv-publish public --config config/feeds.toml`.
+- **The list:** a private repository with `feeds.toml` and a workflow that runs `feed-refinery check-config` on every change. The build reads it with a read-only deploy key: its private half is the secret `FEEDS_CONFIG_DEPLOY_KEY` here.
+- **KV:** a namespace, and a Cloudflare API token that can only edit Workers KV. Here they're the repository variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_KV_NAMESPACE` and the secret `CLOUDFLARE_KV_TOKEN`; `feed-refinery kv-get` and `feed-refinery kv-publish` read the same names from the environment.
+- **The build:** `feed-refinery kv-get state.json previous.json`, then `feed-refinery build --quiet --config config/feeds.toml --previous-state previous.json`, then `feed-refinery kv-publish public --config config/feeds.toml`.
 - **Serving:** a Worker bound to the namespace serves `<file>.xml` with a token check, and computes `/health` from `health.json`. This one is in [mbologna/infra](https://codeberg.org/mbologna/infra) (`terraform/dns-michelebologna.net/feeds-worker.js`).
 
 ## Development
@@ -251,13 +251,13 @@ uv run ruff check . && uv run ruff format --check .
 uv run pre-commit run --all-files  # ruff, mypy, bandit and file checks; `uv run pre-commit install` runs them on each commit
 
 # Build into public/ against the live APIs, starting from no state
-uv run feeds build --output-dir public --previous-state ''
+uv run feed-refinery build --output-dir public --previous-state ''
 
 # Check the published feeds' age
-uv run feeds check --max-age-hours 3
+uv run feed-refinery check --max-age-hours 3
 
 # Check the example feeds.toml
-uv run feeds check-config examples/feeds.toml
+uv run feed-refinery check-config examples/feeds.toml
 
 # The editor's browser test: Chromium, Pyodide from jsDelivr, packages from PyPI
 uv run --group editor playwright install chromium
@@ -291,7 +291,7 @@ Actions and Pages cost nothing for a public repository, and the HN feeds already
 
 ## Versioning
 
-`main` is what runs: every push to it, and every 30-minute dispatch, deploys the feeds to GitHub Pages. Releases follow SemVer as a changelog: the Monday run's [auto-release](https://github.com/mbologna/auto-release) tags `vX.Y.Z` from the [Conventional Commit](https://www.conventionalcommits.org/) types merged since the last tag (`feat` minor; `fix`, `perf`, `revert` patch; a breaking change major), or cuts a maintenance release when only dependency updates landed; the 30-minute dispatches never release. The tag builds and deploys nothing; its [GitHub Release](https://github.com/mbologna/feeds/releases) lists the changes. See the [versioning standard](https://github.com/mbologna/.github/blob/main/VERSIONING.md).
+`main` is what runs: every push to it, and every 30-minute dispatch, deploys the feeds to GitHub Pages. Releases follow SemVer as a changelog: the Monday run's [auto-release](https://github.com/mbologna/auto-release) tags `vX.Y.Z` from the [Conventional Commit](https://www.conventionalcommits.org/) types merged since the last tag (`feat` minor; `fix`, `perf`, `revert` patch; a breaking change major), or cuts a maintenance release when only dependency updates landed; the 30-minute dispatches never release. The tag builds and deploys nothing; its [GitHub Release](https://github.com/mbologna/feed-refinery/releases) lists the changes. See the [versioning standard](https://github.com/mbologna/.github/blob/main/VERSIONING.md).
 
 ## License
 

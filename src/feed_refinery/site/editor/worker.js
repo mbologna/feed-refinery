@@ -1,4 +1,4 @@
-// The editor's Python runtime: Pyodide in a module worker, running the feeds
+// The editor's Python runtime: Pyodide in a module worker, running the feed-refinery
 // package (the wheel CI publishes next to this file) and bridge.py from it.
 //
 // Every Pyodide core file is fetched with its Subresource Integrity hash, so
@@ -14,7 +14,7 @@ const INTEGRITY = {
   "python_stdlib.zip": "sha384-xW3A5jmenkrPXbsgrIaB1FCJh9OuLT7FRMagsJMgtlhVc19k/mSy3+7nMaF/d767",
   "pyodide-lock.json": "sha384-o8SQQvpVlZnOl04+3dFTJipKxul9GbViVusA379wlOrfHSgxbzt0yPiqCTxOiYES",
 };
-const WHEEL = "/tmp/feeds-0.0.0-py3-none-any.whl";
+const WHEEL = "/tmp/feed_refinery-0.0.0-py3-none-any.whl";
 
 const plainFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = (input, init = {}) => {
@@ -45,13 +45,13 @@ async function boot() {
   status("Loading Python…");
   const [{ loadPyodide }, asm] = await Promise.all([importVerified("pyodide.mjs"), importVerified("pyodide.asm.mjs")]);
   const pyodide = await loadPyodide({ indexURL: PYODIDE, createPyodideModule: asm.default });
-  status("Installing the feeds package…");
+  status("Installing the feed-refinery package…");
   await pyodide.loadPackage("micropip", { messageCallback: () => {} });
   const micropip = pyodide.pyimport("micropip");
   // CI publishes the wheel and the locked versions of what it needs from
   // PyPI (uv.lock's pyodide group) next to this file.
   const [wheel, requirements] = await Promise.all(
-    ["feeds.whl", "requirements.txt"].map(async (name) => {
+    ["feed_refinery.whl", "requirements.txt"].map(async (name) => {
       const response = await plainFetch(new URL(name, import.meta.url), { cache: "no-cache" });
       if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
       return response;
@@ -64,7 +64,7 @@ async function boot() {
     .filter((line) => line && !line.startsWith("#"));
   await micropip.install(pins, { deps: false });
   await micropip.install(`emfs:${WHEEL}`, { deps: false });
-  return { pyodide, bridge: pyodide.pyimport("feeds.site.editor.bridge") };
+  return { pyodide, bridge: pyodide.pyimport("feed_refinery.site.editor.bridge") };
 }
 
 const ready = boot();

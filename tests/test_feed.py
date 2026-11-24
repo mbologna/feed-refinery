@@ -5,9 +5,9 @@ from dataclasses import replace
 
 import pytest
 
-from feeds.comments import Comment
-from feeds.config import Digest, Feed, Rss
-from feeds.feed import (
+from feed_refinery.comments import Comment
+from feed_refinery.config import Digest, Feed, Rss
+from feed_refinery.feed import (
     ATOM,
     DC,
     MEDIA,
@@ -21,11 +21,11 @@ from feeds.feed import (
     render_rss_feed,
     rss_item_html,
 )
-from feeds.page import describe, render_page
-from feeds.preview import Preview
-from feeds.rss import Item
-from feeds.source import Story
-from feeds.state import Entry, RssEntry
+from feed_refinery.page import describe, render_page
+from feed_refinery.preview import Preview
+from feed_refinery.rss import Item
+from feed_refinery.source import Story
+from feed_refinery.state import Entry, RssEntry
 
 NOW = dt.datetime(2026, 11, 19, 12, 0, tzinfo=dt.UTC)
 FEED = Feed("frontpage.xml", "Hacker News: front page", "front_page")

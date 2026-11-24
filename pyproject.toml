@@ -1,10 +1,10 @@
 [project]
-name = "feeds"
+name = "feed-refinery"
 # A placeholder, never bumped: a release is the git tag vX.Y.Z that
 # auto-release creates, with a GitHub Release of the commit subjects; it
 # builds nothing. Nothing reads this field at run time.
 version = "0.0.0"
-description = "RSS feeds built by GitHub Actions: Hacker News (front page, 100+ points, top stories, daily digest) and any RSS or Atom feed, filtered, merged and enriched with each article's image and excerpt"
+description = "Refines RSS feeds: Hacker News feeds with each story's image, excerpt and top comment, and any RSS, Atom or JSON source filtered, merged and enriched"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Michele Bologna" }]
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-feeds = "feeds.cli:main"
+feed-refinery = "feed_refinery.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.13,<0.14"]
@@ -84,8 +84,8 @@ addopts = "-v --strict-markers"
 exclude_dirs = ["tests"]
 
 [tool.coverage.run]
-source = ["feeds"]
-# `python -m feeds` only calls main().
+source = ["feed_refinery"]
+# `python -m feed_refinery` only calls main().
 omit = ["*/__main__.py"]
 
 [tool.coverage.report]

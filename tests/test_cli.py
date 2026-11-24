@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from conftest import FakeResponse, hit
 
-from feeds import cli
-from feeds.source import API, FIREBASE
+from feed_refinery import cli
+from feed_refinery.source import API, FIREBASE
 
 PAGE = "https://site.example/"
 CONFIG = """

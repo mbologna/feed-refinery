@@ -5,8 +5,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from conftest import hit
 
-from feeds.config import Feed
-from feeds.source import (
+from feed_refinery.config import Feed
+from feed_refinery.source import (
     API,
     FIREBASE,
     fetch_ranked_ids,

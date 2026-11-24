@@ -76,7 +76,7 @@ def render_page(feeds: list[tuple[Feed | Digest | Rss, str]]) -> str:
 <body>
   <h1>Feeds</h1>
   <p>Hacker News feeds, and other sites' feeds filtered and merged, whose items carry each article's image and excerpt.
-  Rebuilt every 30 minutes. Source: <a href="https://github.com/mbologna/feeds">mbologna/feeds</a>.</p>
+  Rebuilt every 30 minutes. Source: <a href="https://github.com/mbologna/feed-refinery">mbologna/feed-refinery</a>.</p>
   <ul>
 {rows}
   </ul>

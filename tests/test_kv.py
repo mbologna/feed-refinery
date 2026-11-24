@@ -5,8 +5,8 @@ import urllib.error
 import pytest
 from conftest import FakeResponse
 
-from feeds import kv
-from feeds.kv import Kv, KvError, content_hash, items_hash, publish
+from feed_refinery import kv
+from feed_refinery.kv import Kv, KvError, content_hash, items_hash, publish
 
 ACCOUNT, NAMESPACE = "acct", "ns1"
 BASE = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT}/storage/kv/namespaces/{NAMESPACE}"

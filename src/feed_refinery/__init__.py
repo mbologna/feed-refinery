@@ -6,4 +6,4 @@
 PAGE_URL = "https://feeds.michelebologna.net/"
 STATE_NAME = "state.json"
 HEALTH_NAME = "health.json"
-USER_AGENT = "Mozilla/5.0 (compatible; feeds; +https://github.com/mbologna/feeds)"
+USER_AGENT = "Mozilla/5.0 (compatible; feed-refinery; +https://github.com/mbologna/feed-refinery)"

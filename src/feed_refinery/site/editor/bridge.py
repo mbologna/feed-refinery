@@ -22,7 +22,7 @@ import tomlkit
 from tomlkit.container import Container
 from tomlkit.items import AoT, Array, Comment, Item, Table, Whitespace
 
-from feeds import config, rss
+from feed_refinery import config, rss
 
 KINDS = ("feed", "digest", "rss")
 
