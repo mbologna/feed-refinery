@@ -1,4 +1,4 @@
-"""Command line: build the feeds, or check the published ones' age."""
+"""Command line: build the feeds, check the published ones' age, or check the feed list."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 
 from . import PAGE_URL, STATE_NAME, USER_AGENT, comments, config, preview, rss, source, state
-from .feed import last_build_date, render_digest, render_feed, render_rss_feed
+from .feed import last_build_date, plural, render_digest, render_feed, render_rss_feed
 from .page import render_page
 
 HEALTH_NAME = "health.json"
@@ -189,6 +189,19 @@ def check(config_path: Path, page_url: str, max_age: dt.timedelta, now: dt.datet
     return ok
 
 
+def check_config(config_path: Path) -> None:
+    """Print what a feeds.toml publishes. Raises ConfigError, with the build's message, when it wouldn't build."""
+    conf = config.load(config_path)
+    counts = [
+        plural(len(conf.feeds), "HN feed"),
+        plural(len(conf.digests), "digest"),
+        plural(len(conf.rss), "RSS feed"),
+    ]
+    print(f"{config_path}: ok, {', '.join(counts)}")
+    for file in conf.files:
+        print(f"  {file}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="feeds", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -208,6 +221,9 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--page-url", default=PAGE_URL)
     c.add_argument("--max-age-hours", type=float, default=3)
 
+    v = sub.add_parser("check-config", help="fail when the feed list wouldn't build, with the build's message")
+    v.add_argument("config", type=Path, nargs="?", default=Path("feeds.toml"))
+
     args = parser.parse_args(argv)
     now = dt.datetime.now(dt.UTC).replace(microsecond=0)
 
@@ -221,7 +237,13 @@ def main(argv: list[str] | None = None) -> int:
             previous = default if args.previous_state is None else args.previous_state
             build(args.config, args.output_dir, args.page_url, previous, now)
             return 0
+        if args.command == "check-config":
+            check_config(args.config)
+            return 0
         return 0 if check(args.config, args.page_url, dt.timedelta(hours=args.max_age_hours), now) else 1
     except config.ConfigError as e:
         print(f"{args.config}: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError as e:
+        print(f"{args.config}: {e.strerror}", file=sys.stderr)
         return 2

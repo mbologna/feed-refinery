@@ -352,3 +352,19 @@ def test_an_rss_feed_with_few_images_warns(tmp_path, web, capsys):
     assert "rss previews: fetched 0 new, 10 failed" in log
     assert "  https://s.example/3: HTTPError: HTTP Error 403" in log
     assert "::warning::r.xml: only 0 of 10 items have an image" in log
+
+
+def test_check_config_lists_what_a_valid_file_publishes(tmp_path, capsys):
+    config = tmp_path / "feeds.toml"
+    config.write_text(CONFIG)
+    assert cli.main(["check-config", str(config)]) == 0
+    assert capsys.readouterr().out == f"{config}: ok, 2 HN feeds, 0 digests, 0 RSS feeds\n  frontpage.xml\n  best.xml\n"
+
+
+def test_check_config_fails_with_the_builds_message(tmp_path, capsys):
+    config = tmp_path / "feeds.toml"
+    config.write_text(CONFIG + '[[digest]]\nfile = "best.xml"\ntitle = "D"\n')
+    assert cli.main(["check-config", str(config)]) == 2
+    assert capsys.readouterr().err == f"{config}: digest #1: best.xml is already used by another feed\n"
+    assert cli.main(["check-config", str(tmp_path / "missing.toml")]) == 2
+    assert capsys.readouterr().err == f"{tmp_path / 'missing.toml'}: No such file or directory\n"

@@ -130,7 +130,7 @@ A push to `main` republishes the feeds. An unknown key, a wrong type, a regular 
 
 ## How it's published
 
-The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pull request. On `main` it then builds the feeds and deploys them to GitHub Pages:
+The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pull request and checks `feeds.toml` with `feeds check-config`. On `main` it then builds the feeds and deploys them to GitHub Pages:
 
 - on every push;
 - every 30 minutes (at :07 and :37), dispatched by a Cron Trigger on the Worker that serves the feeds: GitHub's own schedule ran hours late, or not at all. Those runs skip the tests;
@@ -179,7 +179,7 @@ Serve the folder with any static web server, such as nginx, Caddy or `python3 -m
 7,37 * * * *  cd /srv/feeds && uvx --from git+https://github.com/mbologna/feeds feeds build --output-dir /var/www/feeds --page-url https://feeds.example.com/ --previous-state /var/www/feeds/state.json
 ```
 
-Give cron the full path to `uvx` if its `PATH` does not include it. `feeds check --page-url https://feeds.example.com/`, run from the same directory, exits with status 1 when a configured feed is missing or was built more than 3 hours ago (`--max-age-hours`).
+Give cron the full path to `uvx` if its `PATH` does not include it. `feeds check --page-url https://feeds.example.com/`, run from the same directory, exits with status 1 when a configured feed is missing or was built more than 3 hours ago (`--max-age-hours`). `feeds check-config feeds.toml` exits with status 2 and the build's message when the file wouldn't build.
 
 ## Development
 
@@ -193,6 +193,9 @@ uv run feeds build --output-dir public --previous-state ''
 
 # Check the published feeds' age
 uv run feeds check --max-age-hours 3
+
+# Check feeds.toml
+uv run feeds check-config feeds.toml
 ```
 
 The tests never touch the network: they swap `urlopen` for a table of canned responses. The RSS fixtures under `tests/fixtures/` are cut from News Site's live feed, plus items modelled on Tech Site's, an Atom sample and a page that isn't a feed.
