@@ -120,6 +120,8 @@ def test_rss_with_every_key():
         + """sources = ["https://a.example/feed", "https://b.example/rss"]
 include_categories = ["World", " Science "]
 exclude_categories = ["Bits"]
+include_sections = ["Features", " AI"]
+exclude_sections = ["Gaming"]
 exclude_authors = ["Bot"]
 include_titles = ["^News"]
 exclude_titles = ["(?i)sponsored"]
@@ -133,6 +135,7 @@ dedupe = "link+title"
     assert feed.sources == ("https://a.example/feed", "https://b.example/rss")
     assert feed.include_categories == {"world", "science"}  # stripped and case-folded
     assert feed.exclude_categories == {"bits"} and feed.exclude_authors == {"bot"}
+    assert feed.include_sections == {"features", "ai"} and feed.exclude_sections == {"gaming"}
     assert feed.include_titles == (re.compile("^News"),)
     assert feed.exclude_titles[0].search("A SPONSORED post")
     assert feed.include_links == (re.compile("/articles/"),) and feed.exclude_links == (re.compile("/video/"),)
@@ -156,6 +159,9 @@ dedupe = "link+title"
         (RSS + 'source = "https://a.example/"\nexclude_categories = "Bits"', "exclude_categories must be a list"),
         (RSS + 'source = "https://a.example/"\ninclude_categories = [""]', "include_categories must be a list"),
         (RSS + 'source = "https://a.example/"\nexclude_authors = [1]', "exclude_authors must be a list"),
+        (RSS + 'source = "https://a.example/"\ninclude_sections = "AI"', "include_sections must be a list"),
+        (RSS + 'source = "https://a.example/"\nexclude_sections = [" "]', "exclude_sections must be a list"),
+        (RSS + 'source = "https://a.example/"\nexclude_section = ["AI"]', "unknown keys: exclude_section"),
         (RSS + 'source = "https://a.example/"\nexclude_titles = ["(unclosed"]', "exclude_titles: '\\(unclosed'"),
         (RSS + 'source = "https://a.example/"\ninclude_links = ["[a-"]', "include_links: .* is not a valid regular"),
         (RSS + 'source = "https://a.example/"\nenrich = "yes"', "enrich must be true or false"),

@@ -12,6 +12,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 NEWS_SAMPLE = (FIXTURES / "newssite.xml").read_bytes()
 ATOM = (FIXTURES / "atom.xml").read_bytes()
 BROKEN = (FIXTURES / "broken.xml").read_bytes()
+TECH_SAMPLE = (FIXTURES / "techsite.xml").read_bytes()
 SOURCE = "https://www.newssite.example/feed"
 NEWS_SITE = Rss(
     "newssite.xml",
@@ -206,6 +207,17 @@ def feed(**kw):
         ({"include_links": (re.compile("/articles/"),)}, {"link": None}, False),
         ({"exclude_links": (re.compile("/video/"),)}, {"link": "https://news.example/video/1"}, False),
         ({"exclude_links": (re.compile("/video/"),)}, {"link": None}, True),
+        ({"include_sections": frozenset({"world"})}, {"categories": ("World", "Sport")}, True),
+        ({"include_sections": frozenset({"world"})}, {"categories": ("Sport", "World")}, False),  # first only
+        ({"include_sections": frozenset({"world"})}, {"categories": ()}, False),
+        ({"exclude_sections": frozenset({"sport"})}, {"categories": ("SPORT", "World")}, False),
+        (
+            {"exclude_sections": frozenset({"sport"})},
+            {"categories": ("World", "Sport")},
+            True,
+        ),  # a tag, not the section
+        ({"exclude_sections": frozenset({"sport"})}, {"categories": ("Sports",)}, True),  # exact only
+        ({"exclude_sections": frozenset({"sport"})}, {"categories": ()}, True),
         ({"exclude_authors": frozenset({"bot"})}, {"author": "Bot"}, False),
         ({"exclude_authors": frozenset({"bot"})}, {"author": "Robot"}, True),
     ],
@@ -223,6 +235,74 @@ def test_every_include_list_must_match_then_any_exclude_drops():
     mixed = feed(include_categories=frozenset({"world"}), exclude_categories=frozenset({"bits"}))
     assert keep(item(categories=("World",)), mixed)
     assert not keep(item(categories=("World", "Bits")), mixed)
+
+
+def test_sections_include_first_then_exclude():
+    both = feed(include_sections=frozenset({"features", "ai"}), exclude_sections=frozenset({"ai"}))
+    assert keep(item(categories=("Features", "AI")), both)
+    assert not keep(item(categories=("AI", "Features")), both)
+    assert not keep(item(categories=("Tech", "Features")), both)
+
+
+TECH_FEED = Rss(
+    "techsite.xml",
+    "Tech Site",
+    ("https://feeds.techsite.example/index",),
+    exclude_sections=frozenset({"policy", "space", "gaming", "cars", "culture"}),
+)
+
+
+def test_ars_sections_keep_cross_tagged_articles():
+    items = parse(TECH_SAMPLE, "https://feeds.techsite.example/index")
+    kept = {i.title: i.categories for i in items if keep(i, TECH_FEED)}
+    assert kept == {
+        # Features, tagged Gaming
+        "Grand Theft Auto VI: The Tech Site review": (
+            "Features",
+            "Gaming",
+            "grand theft auto",
+            "review",
+            "rockstar",
+        ),
+        # AI, tagged Cars
+        "Tesla gave up the EV crown to chase autonomy. It still has to deliver": (
+            "AI",
+            "Cars",
+            "autonomy",
+            "Elon Musk",
+            "Tesla",
+        ),
+        # AI, tagged Culture
+        "The new human-crafted Apple Music brand matters in an AI world": (
+            "AI",
+            "Apple",
+            "Culture",
+            "apple",
+            "opinion",
+        ),
+        # AI, tagged Policy
+        "States sue SpaceX to stop Grok from generating abusive images": ("AI", "Policy", "Elon Musk", "grok"),
+        "Trump halts Iowa detonation, says new governor to blame if it blows accidentally": (
+            "Health",
+            "army",
+            "detonation",
+            "Iowa",
+        ),
+        "COP31 ends in failure as countries split over fossil fuels": (
+            "Science",
+            "climate change",
+            "COP31",
+            "syndication",
+        ),
+    }
+    dropped = {i.categories[0] for i in items if not keep(i, TECH_FEED)}
+    assert dropped == {"Policy", "Space", "Gaming", "Cars", "Culture"}
+    # Excluding the same names as categories would drop the first four.
+    by_category = Rss("a.xml", "A", TECH_FEED.sources, exclude_categories=TECH_FEED.exclude_sections)
+    assert [i.title for i in items if keep(i, by_category)] == [
+        "Trump halts Iowa detonation, says new governor to blame if it blows accidentally",
+        "COP31 ends in failure as countries split over fossil fuels",
+    ]
 
 
 @pytest.mark.parametrize(

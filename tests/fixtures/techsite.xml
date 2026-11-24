@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Cut down from Tech Site's feeds of 2026-11-23: the shape and categories of real items. -->
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>Tech Site</title>
+    <link>https://techsite.example</link>
+    <description>Serving the Technologist since 1998. News, reviews, and analysis.</description>
+    <item>
+      <title>Grand Theft Auto VI: The Tech Site review</title>
+      <link>https://techsite.example/gaming/2026/11/grand-theft-auto-vi-the-techsite-review/</link>
+      <dc:creator><![CDATA[Kyle Orland]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 13:00:00 +0000</pubDate>
+      <category><![CDATA[Features]]></category>
+      <category><![CDATA[Gaming]]></category>
+      <category><![CDATA[grand theft auto]]></category>
+      <category><![CDATA[review]]></category>
+      <category><![CDATA[rockstar]]></category>
+      <guid isPermaLink="true">https://techsite.example/gaming/2026/11/grand-theft-auto-vi-the-techsite-review/</guid>
+      <description><![CDATA[Grand Theft Auto VI: The Tech Site review: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/grand-theft-auto-vi-the-techsite-review-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>Tesla gave up the EV crown to chase autonomy. It still has to deliver</title>
+      <link>https://techsite.example/cars/2026/11/tesla-gave-up-the-ev-crown-to-chase-autonomy/</link>
+      <dc:creator><![CDATA[Jonathan M. Gitlin]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 12:00:00 +0000</pubDate>
+      <category><![CDATA[AI]]></category>
+      <category><![CDATA[Cars]]></category>
+      <category><![CDATA[autonomy]]></category>
+      <category><![CDATA[Elon Musk]]></category>
+      <category><![CDATA[Tesla]]></category>
+      <guid isPermaLink="true">https://techsite.example/cars/2026/11/tesla-gave-up-the-ev-crown-to-chase-autonomy/</guid>
+      <description><![CDATA[Tesla gave up the EV crown to chase autonomy. It still has to deliver: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/tesla-gave-up-the-ev-crown-to-chase-autonomy-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>The new human-crafted Apple Music brand matters in an AI world</title>
+      <link>https://techsite.example/apple/2026/11/the-new-human-crafted-apple-music-brand-matters-in-an-ai-world/</link>
+      <dc:creator><![CDATA[Samuel Axon]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 11:00:00 +0000</pubDate>
+      <category><![CDATA[AI]]></category>
+      <category><![CDATA[Apple]]></category>
+      <category><![CDATA[Culture]]></category>
+      <category><![CDATA[apple]]></category>
+      <category><![CDATA[opinion]]></category>
+      <guid isPermaLink="true">https://techsite.example/apple/2026/11/the-new-human-crafted-apple-music-brand-matters-in-an-ai-world/</guid>
+      <description><![CDATA[The new human-crafted Apple Music brand matters in an AI world: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/the-new-human-crafted-apple-music-brand-matters-in-an-ai-world-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>States sue SpaceX to stop Grok from generating abusive images</title>
+      <link>https://techsite.example/tech-policy/2026/11/states-sue-spacex-over-grok-images/</link>
+      <dc:creator><![CDATA[Ashley Belanger]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 10:00:00 +0000</pubDate>
+      <category><![CDATA[AI]]></category>
+      <category><![CDATA[Policy]]></category>
+      <category><![CDATA[Elon Musk]]></category>
+      <category><![CDATA[grok]]></category>
+      <guid isPermaLink="true">https://techsite.example/tech-policy/2026/11/states-sue-spacex-over-grok-images/</guid>
+      <description><![CDATA[States sue SpaceX to stop Grok from generating abusive images: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/states-sue-spacex-over-grok-images-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>Trump halts Iowa detonation, says new governor to blame if it blows accidentally</title>
+      <link>https://techsite.example/health/2026/11/trump-halts-iowa-detonation/</link>
+      <dc:creator><![CDATA[Beth Mole]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 09:00:00 +0000</pubDate>
+      <category><![CDATA[Health]]></category>
+      <category><![CDATA[army]]></category>
+      <category><![CDATA[detonation]]></category>
+      <category><![CDATA[Iowa]]></category>
+      <guid isPermaLink="true">https://techsite.example/health/2026/11/trump-halts-iowa-detonation/</guid>
+      <description><![CDATA[Trump halts Iowa detonation, says new governor to blame if it blows accidentally: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/trump-halts-iowa-detonation-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>COP31 ends in failure as countries split over fossil fuels</title>
+      <link>https://techsite.example/science/2026/11/cop31-ends-in-failure/</link>
+      <dc:creator><![CDATA[Tech Site Contributors]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 08:00:00 +0000</pubDate>
+      <category><![CDATA[Science]]></category>
+      <category><![CDATA[climate change]]></category>
+      <category><![CDATA[COP31]]></category>
+      <category><![CDATA[syndication]]></category>
+      <guid isPermaLink="true">https://techsite.example/science/2026/11/cop31-ends-in-failure/</guid>
+      <description><![CDATA[COP31 ends in failure as countries split over fossil fuels: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/cop31-ends-in-failure-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>Surveillance pricing uses our personal data to make us pay more</title>
+      <link>https://techsite.example/tech-policy/2026/11/surveillance-pricing/</link>
+      <dc:creator><![CDATA[Ashley Belanger]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 07:00:00 +0000</pubDate>
+      <category><![CDATA[Policy]]></category>
+      <category><![CDATA[Tech]]></category>
+      <category><![CDATA[privacy]]></category>
+      <category><![CDATA[surveillance pricing]]></category>
+      <guid isPermaLink="true">https://techsite.example/tech-policy/2026/11/surveillance-pricing/</guid>
+      <description><![CDATA[Surveillance pricing uses our personal data to make us pay more: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/surveillance-pricing-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>Russia will launch a routine ISS supply mission tomorrow</title>
+      <link>https://techsite.example/space/2026/11/russia-iss-supply-mission/</link>
+      <dc:creator><![CDATA[Eric Berger]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 06:00:00 +0000</pubDate>
+      <category><![CDATA[Space]]></category>
+      <category><![CDATA[NASA]]></category>
+      <category><![CDATA[roscosmos]]></category>
+      <category><![CDATA[space]]></category>
+      <guid isPermaLink="true">https://techsite.example/space/2026/11/russia-iss-supply-mission/</guid>
+      <description><![CDATA[Russia will launch a routine ISS supply mission tomorrow: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/russia-iss-supply-mission-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>After a 10-year redemption arc, No Man's Sky is coming to the iPhone and iPad</title>
+      <link>https://techsite.example/gaming/2026/11/no-mans-sky-iphone-ipad/</link>
+      <dc:creator><![CDATA[Andrew Cunningham]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 05:00:00 +0000</pubDate>
+      <category><![CDATA[Gaming]]></category>
+      <category><![CDATA[apple]]></category>
+      <category><![CDATA[Hello Games]]></category>
+      <category><![CDATA[iOS]]></category>
+      <guid isPermaLink="true">https://techsite.example/gaming/2026/11/no-mans-sky-iphone-ipad/</guid>
+      <description><![CDATA[After a 10-year redemption arc, No Man&#x27;s Sky is coming to the iPhone and iPad: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/no-mans-sky-iphone-ipad-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>F1 in Las Vegas: You've never seen an F1 race like this before</title>
+      <link>https://techsite.example/cars/2026/11/f1-in-las-vegas/</link>
+      <dc:creator><![CDATA[Jonathan M. Gitlin]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 04:00:00 +0000</pubDate>
+      <category><![CDATA[Cars]]></category>
+      <category><![CDATA[F1]]></category>
+      <category><![CDATA[Formula 1]]></category>
+      <category><![CDATA[las vegas]]></category>
+      <guid isPermaLink="true">https://techsite.example/cars/2026/11/f1-in-las-vegas/</guid>
+      <description><![CDATA[F1 in Las Vegas: You&#x27;ve never seen an F1 race like this before: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/f1-in-las-vegas-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>Marvel crams every superhero ever into Avengers: Doomsday final trailer</title>
+      <link>https://techsite.example/culture/2026/11/avengers-doomsday-final-trailer/</link>
+      <dc:creator><![CDATA[Jennifer Ouellette]]></dc:creator>
+      <pubDate>Mon, 23 Nov 2026 03:00:00 +0000</pubDate>
+      <category><![CDATA[Culture]]></category>
+      <category><![CDATA[entertainment]]></category>
+      <category><![CDATA[Trailers]]></category>
+      <guid isPermaLink="true">https://techsite.example/culture/2026/11/avengers-doomsday-final-trailer/</guid>
+      <description><![CDATA[Marvel crams every superhero ever into Avengers: Doomsday final trailer: the story in one line.]]></description>
+      <media:content url="https://cdn.techsite.example/wp-content/uploads/2026/11/avengers-doomsday-final-trailer-1024x648.jpg" type="image/jpeg" medium="image" />
+    </item>
+  </channel>
+</rss>

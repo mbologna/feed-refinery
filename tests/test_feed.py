@@ -283,6 +283,12 @@ def test_rss_items_keep_the_sources_fields():
     assert item.findtext("comments") is None
 
 
+def test_rss_items_drop_categories_that_differ_only_in_case():
+    entry = RssEntry(rss_item(categories=("AI", "Apple", "Culture", "apple", "APPLE", "opinion")), 0)
+    _, root = render_rss([entry])
+    assert [c.text for c in root.findall("channel/item/category")] == ["AI", "Apple", "Culture", "opinion"]
+
+
 def test_rss_item_html():
     assert rss_item_html(RssEntry(rss_item(summary="Uno <b>due</b> & tre"), 0)) == (
         '<p><img src="https://static.example/chiara.png?w=680&amp;h=453" alt=""></p>\n'

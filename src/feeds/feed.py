@@ -198,6 +198,14 @@ def rss_item_html(entry: RssEntry) -> str:
     return "\n".join(parts)
 
 
+def distinct(categories: tuple[str, ...]) -> list[str]:
+    """The categories without those that differ only in case from an earlier one ("Apple" and the tag "apple")."""
+    seen: dict[str, str] = {}
+    for category in categories:
+        seen.setdefault(category.casefold(), category)
+    return list(seen.values())
+
+
 def render_rss_feed(feed: Rss, entries: list[RssEntry], feed_url: str, page_url: str, now: dt.datetime) -> bytes:
     """An RSS feed's document, entries newest first. Items keep the source's title, link, guid, date and categories."""
     description = f"{feed.title}, from {', '.join(feed.sources)}"
@@ -214,7 +222,7 @@ def render_rss_feed(feed: Rss, entries: list[RssEntry], feed_url: str, page_url:
         permalink = "true" if source.permalink else "false"
         ET.SubElement(item, "guid", {"isPermaLink": permalink}).text = source.guid
         ET.SubElement(item, "pubDate").text = format_datetime(utc(source.published or entry.first_seen))
-        for category in source.categories:
+        for category in distinct(source.categories):
             ET.SubElement(item, "category").text = category
         if source.author:
             ET.SubElement(item, f"{{{DC}}}creator").text = source.author

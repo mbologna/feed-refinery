@@ -10,6 +10,8 @@ from .feed import domain, plural
 FILTERS = (
     "include_categories",
     "exclude_categories",
+    "include_sections",
+    "exclude_sections",
     "exclude_authors",
     "include_titles",
     "exclude_titles",
