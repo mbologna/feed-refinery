@@ -194,6 +194,47 @@ def test_digest_publishes_due_days_once(tmp_path, web, capsys):
     assert "digest.xml" in (tmp_path / "again" / "index.html").read_text()
 
 
+PAYWALLED = '<script type="application/ld+json">{"isAccessibleForFree": false}</script>'
+WALLED_CONFIG = """
+[[feed]]
+file = "walled.xml"
+title = "Free only"
+tags = "story"
+exclude_paywalled = true
+
+[[feed]]
+file = "open.xml"
+title = "Everything"
+tags = "story"
+
+[[digest]]
+file = "digest.xml"
+title = "Daily"
+top = 3
+days = 2
+exclude_paywalled = true
+"""
+
+
+def test_hn_feeds_and_digests_can_hide_paywalled_stories(tmp_path, web):
+    config = tmp_path / "feeds.toml"
+    config.write_text(WALLED_CONFIG)
+    t = int(dt.datetime.now(dt.UTC).timestamp())
+    hits = {"hits": [hit(1, created=t - 60), hit(2, created=t - 60), hit(3, created=t - 60)]}
+    web.json(API + "search?", hits)
+    web.json(API + "search_by_date?", hits)
+    web.html("https://example.com/1", OG.format(n=1))
+    web.html("https://example.com/2", PAYWALLED)
+    web.status("https://example.com/3", 503)  # not read yet: held back until it is, or fails for good
+    web.json(FIREBASE + "item/", {"kids": []})
+    out = tmp_path / "out"
+    assert build(config, out, "--previous-state", "") == 0
+    assert guids(out / "walled.xml") == ["1"]
+    assert sorted(guids(out / "open.xml")) == ["1", "2", "3"]
+    days = [d.findtext("description") for d in ET.parse(out / "digest.xml").getroot().findall("channel/item")]
+    assert days and all("Story 1" in d and "Story 2" not in d and "Story 3" not in d for d in days)
+
+
 def test_stories_no_longer_listed_get_fresh_counts(tmp_path, web, capsys):
     config = tmp_path / "feeds.toml"
     config.write_text('[[feed]]\nfile = "f.xml"\ntitle = "F"\ntags = "front_page"\n')
@@ -263,6 +304,9 @@ def test_build_rss_feeds_end_to_end(tmp_path, web, capsys):
     )
     for url in NO_TEXT:
         web.html(url, '<head><meta property="og:image" content="/og.jpg"><meta name="description" content="OG"></head>')
+    # The other items' descriptions are teasers: their pages are read too, and say no more.
+    web.html("https://www.newssite.example/", "<p>Nothing longer here.</p>")
+    web.html("https://blog.example.org/", "<p>Nothing longer here.</p>")
     out = tmp_path / "public"
     now = dt.datetime(2026, 11, 23, 21, 30, tzinfo=dt.UTC)
 
@@ -270,10 +314,14 @@ def test_build_rss_feeds_end_to_end(tmp_path, web, capsys):
     log = capsys.readouterr().out
     assert "newssite.xml: https://www.newssite.example/feed: 12 items, 7 pass the filters" in log
     assert "mixed.xml: https://blog.example.org/feed.atom: 3 items, 1 pass the filters" in log
-    # One request per source, though two feeds share News Site; one per missing preview.
+    # One request per source, though two feeds share News Site; one per item that lacks an image or has only a
+    # teaser, which is every item here, though two feeds share some.
     assert web.requests.count(NEWS_SAMPLE_FEED) == 1
-    assert sorted(r for r in web.requests if r not in (NEWS_SAMPLE_FEED, ATOM_FEED)) == sorted([TOPICS, *NO_TEXT])
-    assert "rss previews: fetched 3 new, 0 failed" in log
+    pages = sorted(r for r in web.requests if r not in (NEWS_SAMPLE_FEED, ATOM_FEED))
+    published = items_of(out / "newssite.xml") + items_of(out / "mixed.xml")
+    assert pages == sorted({i.findtext("link") for i in published} - {None})
+    assert {TOPICS, *NO_TEXT} <= set(pages)
+    assert f"rss previews: fetched {len(pages)} new, 0 failed" in log
 
     newssite = items_of(out / "newssite.xml")
     assert len(newssite) == 7

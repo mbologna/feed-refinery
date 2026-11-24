@@ -21,7 +21,7 @@ import feedparser
 
 from . import USER_AGENT
 from .config import JsonFields, Rss
-from .text import excerpt, plain_text, squash
+from .text import excerpt, pixels, plain_paragraphs, plain_text, squash
 
 TIMEOUT = 30
 RETRY_DELAY = 2  # seconds before the one retry after a network error
@@ -29,6 +29,7 @@ MAX_BYTES = 10 * 1024 * 1024
 ACCEPT = "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.1"
 TRACKING = {"fbclid", "gclid", "ref", "mc_cid", "mc_eid"}  # and every utm_* parameter
 TITLE_LIMIT = 200  # for an item with no title, which gets the start of its text instead
+ICON_SIZE = 100  # pixels: an <img> declared narrower or shorter than this is a tracking pixel, an emoji or an icon
 TEXT_LIMIT = 20_000  # of an item's text kept for exclude_text; never stored
 
 
@@ -40,12 +41,15 @@ class Item:
     published: int | None  # Unix time, from the source; None when it gives no date
     categories: tuple[str, ...]
     author: str
-    summary: str  # the source's description as a plain-text excerpt; empty when it has no text
-    image: str | None  # from an enclosure, media:content or media:thumbnail, or the description's first <img>
+    summary: str  # the source's description as a plain-text excerpt, paragraphs kept; empty when it has no text
+    image: str | None  # from an enclosure, media:content, the description's first <img> or media:thumbnail
     # The description's whole plain text, for exclude_text. Only freshly parsed
     # items have it: the state doesn't store it, and two copies of a story are
     # the same item whatever their text.
     text: str = field(default="", compare=False, repr=False)
+    # The words of the source's full content (content:encoded, Atom <content>);
+    # None when it gives only a description, which says nothing of the article's length.
+    words: int | None = None
 
     @property
     def permalink(self) -> bool:
@@ -172,7 +176,8 @@ def parse_json(body: bytes, base: str, fields: JsonFields) -> list[Item]:
         if not title:
             continue
         html = _at(entry, fields.summary) if fields.summary else None
-        text = plain_text(html)[:TEXT_LIMIT] if isinstance(html, str) else ""
+        prose = plain_paragraphs(html) if isinstance(html, str) else ""
+        text = squash(prose)[:TEXT_LIMIT]
         author = _at(entry, fields.author) if fields.author else None
         image = _at(entry, fields.image) if fields.image else None
         items.append(
@@ -183,7 +188,7 @@ def parse_json(body: bytes, base: str, fields: JsonFields) -> list[Item]:
                 published=_json_date(_at(entry, fields.date), fields.date_format) if fields.date else None,
                 categories=(),
                 author=squash(author) if isinstance(author, str) else "",
-                summary=excerpt(text) if text else "",
+                summary=excerpt(prose),
                 image=_web(image, link) if isinstance(image, str) else None,
                 text=text,
             )
@@ -205,7 +210,9 @@ class _FirstImage(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag == "img" and self.src is None:
-            self.src = dict(attrs).get("src") or None
+            a = dict(attrs)
+            if all(s is None or s >= ICON_SIZE for s in (pixels(a.get("width")), pixels(a.get("height")))):
+                self.src = a.get("src") or None
 
 
 def _first_image(html: str) -> str | None:
@@ -216,14 +223,15 @@ def _first_image(html: str) -> str | None:
 
 
 def _image(entry, html: str, base: str) -> str | None:
+    """The item's picture: full-size images first, then its thumbnail, often a crop too small for an article view."""
     candidates = [e.get("href") for e in entry.get("enclosures", []) if (e.get("type") or "").startswith("image/")]
     candidates += [
         m.get("url")
         for m in entry.get("media_content", [])
         if m.get("medium") == "image" or (m.get("type") or "").startswith("image/")
     ]
-    candidates += [m.get("url") for m in entry.get("media_thumbnail", [])]
     candidates.append(_first_image(html) if html else None)
+    candidates += [m.get("url") for m in entry.get("media_thumbnail", [])]
     return next((u for u in (_web(c, base) for c in candidates) if u), None)
 
 
@@ -233,12 +241,19 @@ def _item(entry, base: str) -> Item | None:
     if not guid:
         return None  # nothing to tell it apart by
     html = entry.get("summary") or ""  # feedparser fills it from <content> when the source has no summary
-    text = plain_text(html)[:TEXT_LIMIT] if html else ""
-    summary = excerpt(text) if text else ""
+    prose = plain_paragraphs(html)
+    text = squash(prose)[:TEXT_LIMIT]
+    # The full content (content:encoded, Atom <content>), when the source has
+    # it besides a shorter description: the excerpt, the image and the word
+    # count come from it, while exclude_text searches the description.
+    content = (entry.get("content") or [{}])[0].get("value") or ""
+    full = prose if content == html else plain_paragraphs(content)
+    if len(full) > len(prose):
+        prose, html = full, html + content  # the description's first image still comes first
     title = entry.get("title") or ""
     if entry.get("title_detail", {}).get("type") in ("text/html", "application/xhtml+xml"):
         title = plain_text(title)
-    title = squash(title) or excerpt(summary, TITLE_LIMIT) or link or guid
+    title = squash(title) or excerpt(text, TITLE_LIMIT) or link or guid
     parsed = entry.get("published_parsed") or entry.get("updated_parsed")
     categories: list[str] = []
     for tag in entry.get("tags", []):
@@ -252,9 +267,10 @@ def _item(entry, base: str) -> Item | None:
         published=calendar.timegm(parsed) if parsed else None,
         categories=tuple(categories),
         author=squash(entry.get("author") or ""),
-        summary=summary,
+        summary=excerpt(prose),
         image=_image(entry, html, link or base),
         text=text,
+        words=len(full.split()) or None,
     )
 
 

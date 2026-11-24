@@ -16,6 +16,7 @@ from feed_refinery.state import (
     HN_RECHECK,
     HN_RECHECK_FOR,
     MAX_ATTEMPTS,
+    TEASER,
     Entry,
     RssEntry,
     RssFeed,
@@ -27,6 +28,7 @@ from feed_refinery.state import (
     fetch_comments,
     fetch_previews,
     fetch_rss_previews,
+    held_back,
     load,
     publish_time,
     update,
@@ -316,6 +318,7 @@ def item(n, link="", guid=None, published=NOW - HOUR, title=None, categories=(),
         author=kw.pop("author", ""),
         summary=kw.pop("summary", ""),
         image=kw.pop("image", None),
+        words=kw.pop("words", None),
     )
 
 
@@ -549,7 +552,7 @@ def test_version_1_state_loads_with_no_rss_feeds_and_keeps_the_rest():
     assert state.stories["1"].preview == Preview("https://e.example/i.png", "D", None)
     assert state.stories["1"].comment_checked == 7
     assert state.feeds == {"f.xml": {"1": 100}} and state.digests == {"d.xml": {"2026-11-18": ["1"]}}
-    assert b'"version":3' in state.to_json()
+    assert b'"version":4' in state.to_json()
 
 
 def rss_state(*entries, file="news.xml"):
@@ -557,28 +560,46 @@ def rss_state(*entries, file="news.xml"):
 
 
 def test_rss_previews_fill_what_the_source_lacks_and_are_never_refetched():
+    full = "Text. " * (TEASER // 5)
     bare = RssEntry(item(1), NOW)
     no_text = RssEntry(item(2, image="https://i.example/2.png"), NOW)
-    complete = RssEntry(item(3, image="https://i.example/3.png", summary="Text"), NOW)
+    complete = RssEntry(item(3, image="https://i.example/3.png", summary=full), NOW)
     no_link = RssEntry(item(4, link=None, guid="n4"), NOW)
-    state = rss_state(bare, no_text, complete, no_link)
+    teaser = RssEntry(item(5, image="https://i.example/5.png", summary="Just a teaser."), NOW)
+    state = rss_state(bare, no_text, complete, no_link, teaser)
     asked = []
 
     def fetch(url):
         asked.append(url)
-        return Preview(image="https://og.example/i.png", description="OG")
+        return Preview(image="https://og.example/i.png", description="The article's opening, longer than a teaser.")
 
     fetched, failed = fetch_rss_previews(state, [NEWS], fetch)
-    assert (fetched, failed) == (2, [])
-    assert sorted(asked) == ["https://news.example/1", "https://news.example/2"]
-    assert bare.image == "https://og.example/i.png" and bare.excerpt == "OG"
-    assert no_text.image == "https://i.example/2.png" and no_text.excerpt == "OG"  # the source's image first
-    assert complete.preview == Preview() and complete.excerpt == "Text"
+    assert (fetched, failed) == (3, [])
+    assert sorted(asked) == ["https://news.example/1", "https://news.example/2", "https://news.example/5"]
+    opening = "The article's opening, longer than a teaser."
+    assert bare.image == "https://og.example/i.png" and bare.excerpt == opening
+    assert no_text.image == "https://i.example/2.png" and no_text.excerpt == opening  # the source's image first
+    assert teaser.image == "https://i.example/5.png" and teaser.excerpt == opening  # the longer text
+    assert complete.preview == Preview() and complete.excerpt == full
     assert no_link.preview == Preview() and no_link.image is None and no_link.excerpt is None
 
     asked.clear()
     assert fetch_rss_previews(state, [NEWS], fetch) == (0, [])
     assert asked == []
+
+
+@pytest.mark.parametrize(
+    ("summary", "description", "excerpt"),
+    [
+        ("Source text", "Page", "Source text"),
+        ("Source", "The page's text", "The page's text"),
+        ("Same", "Tied", "Same"),  # the source's on a tie
+        ("", None, None),
+    ],
+)
+def test_rss_excerpt_is_the_longer_text(summary, description, excerpt):
+    entry = RssEntry(item(1, summary=summary), NOW, Preview(description=description))
+    assert entry.excerpt == excerpt
 
 
 def test_rss_previews_follow_the_retry_rules():
@@ -643,6 +664,44 @@ def test_version_2_rss_items_load_with_hn_and_paywall_unknown():
     )
     entry = State.from_json(old).rss["r.xml"].items["https://news.example/1"]
     assert (entry.hn_points, entry.hn_checked, entry.preview.paywalled) == (None, 0, None)
+
+
+def test_version_3_items_and_previews_load_with_their_words_unknown():
+    old = (
+        b'{"version":3,"stories":{"1":{"story":{"id":"1","title":"T","url":null,"points":1,"comments":0,'
+        b'"created":0,"author":"","text":""},"preview":{"image":null,"description":"D","site_name":null,'
+        b'"paywalled":null},"attempts":0,"comment":null,"comment_checked":0}},"feeds":{},"digests":{},'
+        b'"rss":{"r.xml":{"sources":{},"items":{"https://news.example/1":{"item":{"guid":"g",'
+        b'"link":"https://news.example/1","title":"T","published":1,"categories":[],"author":"","summary":"",'
+        b'"image":null},"first_seen":5,"preview":null,"attempts":0,"from_sources":[],"hn_points":null,'
+        b'"hn_checked":0}},"filters":""}}}'
+    )
+    state = State.from_json(old)
+    assert state.stories["1"].preview.words is None
+    assert state.rss["r.xml"].items["https://news.example/1"].words is None
+
+
+def test_words_survive_a_round_trip():
+    entry = RssEntry(item(1, words=900), NOW, Preview(words=1200))
+    state = rss_state(entry)
+    loaded = State.from_json(state.to_json()).rss["news.xml"].items["https://news.example/1"]
+    assert (loaded.item.words, loaded.preview.words, loaded.words) == (900, 1200, 900)
+
+
+@pytest.mark.parametrize(
+    ("preview", "attempts", "held"),
+    [
+        (None, 0, True),  # not read yet
+        (None, MAX_ATTEMPTS - 1, True),
+        (None, MAX_ATTEMPTS, False),  # never readable: shown
+        (Preview(paywalled=True), 0, True),
+        (Preview(paywalled=False), 0, False),
+        (Preview(), 0, False),  # no marker: free
+    ],
+)
+def test_held_back(preview, attempts, held):
+    assert held_back(Entry(story(1), preview, attempts)) is held
+    assert held_back(RssEntry(item(1), NOW, preview, attempts)) is held
 
 
 def test_rss_previews_fetch_every_page_when_paywalls_are_excluded():

@@ -132,6 +132,54 @@ def test_parse_media_content_and_relative_images():
     assert data.categories == ("A", "B")
 
 
+def test_words_count_the_full_content_only():
+    doc = b"""<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>T</title>
+    <item><title>Full</title><link>https://s.example/1</link><description>A teaser.</description>
+      <content:encoded><![CDATA[<p>One two three.</p><p>Four five.</p>]]></content:encoded></item>
+    <item><title>Only content</title><link>https://s.example/2</link>
+      <content:encoded><![CDATA[<p>Six seven.</p>]]></content:encoded></item>
+    <item><title>Teaser</title><link>https://s.example/3</link><description>A teaser says nothing of length.</description></item>
+    </channel></rss>"""
+    full, only, teaser = parse(doc, "https://s.example/feed")
+    assert (full.words, only.words, teaser.words) == (5, 2, None)
+
+
+def test_the_full_content_gives_the_excerpt_and_image_and_the_description_what_filters_search():
+    doc = b"""<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"
+      xmlns:media="http://search.yahoo.com/mrss/"><channel><title>T</title>
+    <item><title>Both</title><link>https://s.example/1</link><description>A teaser.</description>
+      <media:thumbnail url="https://s.example/thumb.jpg"/>
+      <content:encoded><![CDATA[<img src="/full.jpg"><p>The whole article.</p><p>Every word.</p>]]></content:encoded>
+    </item>
+    <item><title>Rich description</title><link>https://s.example/2</link>
+      <description><![CDATA[<img src="/own.jpg"><p>A description longer than its content.</p>]]></description>
+      <content:encoded><![CDATA[<img src="/other.jpg"><p>Short.</p>]]></content:encoded>
+    </item>
+    </channel></rss>"""
+    both, rich = parse(doc, "https://s.example/feed")
+    assert both.summary == "The whole article.\n\nEvery word."
+    assert both.image == "https://s.example/full.jpg"  # the content's image beats the thumbnail
+    assert both.text == "A teaser."  # exclude_text searches the description, as documented
+    assert rich.summary == "A description longer than its content."
+    assert rich.image == "https://s.example/own.jpg"
+
+
+def test_full_size_images_come_before_the_thumbnail_and_icons_are_skipped():
+    doc = b"""<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>T</title>
+    <item><title>Both</title><link>https://s.example/1</link>
+      <media:thumbnail url="https://s.example/thumb.jpg"/>
+      <description><![CDATA[<img src="/pixel.gif" width="1" height="1"><img src="/full.jpg" width="1200"> Text]]></description>
+    </item>
+    <item><title>Only icons</title><link>https://s.example/2</link>
+      <media:thumbnail url="https://s.example/thumb.jpg"/>
+      <description><![CDATA[<img src="/smiley.png" width="16px"> Text]]></description>
+    </item>
+    </channel></rss>"""
+    both, icons = parse(doc, "https://s.example/feed")
+    assert both.image == "https://s.example/full.jpg"
+    assert icons.image == "https://s.example/thumb.jpg"
+
+
 def test_parse_rejects_what_isnt_a_feed():
     with pytest.raises(ValueError, match="not a feed"):
         parse(BROKEN, SOURCE, "text/html")
@@ -512,7 +560,7 @@ def test_parse_json_maps_the_fields():
     assert post.title == "SLES 16.1 is here"
     assert post.link == post.guid == "https://blog.example/blog/sles-16-1/"
     assert post.published == 1_794_268_800  # 2026-11-10 00:00 UTC
-    assert post.summary == post.text == "More choice for the enterprise"
+    assert post.text == "More choice for the enterprise" and post.summary == "More choice\n\nfor the enterprise"
     assert post.author == "Ada Lovelace" and post.image == "https://blog.example/img/a.png"
     assert post.categories == ()
 

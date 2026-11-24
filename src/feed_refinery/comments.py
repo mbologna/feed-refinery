@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .source import FIREBASE, HN_ITEM, fetch_json
-from .text import excerpt, plain_text
+from .text import excerpt, plain_paragraphs
 
 TRIES = 3  # kids to look at past dead or deleted ones
 
@@ -14,7 +14,7 @@ TRIES = 3  # kids to look at past dead or deleted ones
 class Comment:
     id: str
     author: str
-    text: str  # a plain-text excerpt
+    text: str  # a plain-text excerpt, paragraphs kept
 
     @property
     def url(self) -> str:
@@ -28,5 +28,5 @@ def fetch_top_comment(story_id: str) -> Comment | None:
         item = fetch_json(f"{FIREBASE}item/{kid}.json") or {}
         if item.get("dead") or item.get("deleted") or not item.get("text"):
             continue
-        return Comment(id=str(kid), author=item.get("by") or "", text=excerpt(plain_text(item["text"])))
+        return Comment(id=str(kid), author=item.get("by") or "", text=excerpt(plain_paragraphs(item["text"])))
     return None

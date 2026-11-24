@@ -26,14 +26,16 @@ from .source import Story
 
 # 2 added the rss section; a version 1 file loads with it empty. 3 added the
 # items' hn_points and hn_checked, the previews' paywalled and the feeds'
-# filters; a version 2 file loads with them unknown.
-VERSION = 3
-READABLE = (1, 2, 3)
+# filters; a version 2 file loads with them unknown. 4 added the items' and
+# the previews' words; a version 3 file loads with them unknown.
+VERSION = 4
+READABLE = (1, 2, 3, 4)
 MAX_ATTEMPTS = 3  # preview fetches per story before giving up on it
 COMMENT_INTERVAL = 2 * 3600  # how often a listed story's top comment is looked up again
 RETRY_STATUSES = {408, 429}  # client errors worth another try; other 4xx won't change
 HN_RECHECK = 6 * 3600  # how often a new item's HN points are looked up again
 HN_RECHECK_FOR = 2 * 86400  # for how long after an item first appears: an HN story's points settle in a day
+TEASER = 500  # characters: a source's text shorter than this is a teaser, and the article's page may say more
 
 
 @dataclass
@@ -77,8 +79,14 @@ class RssEntry:
         return self.item.image or (self.preview.image if self.preview else None)
 
     @property
+    def words(self) -> int | None:
+        return self.item.words or (self.preview.words if self.preview else None)
+
+    @property
     def excerpt(self) -> str | None:
-        return self.item.summary or (self.preview.description if self.preview else None)
+        """The longer of the source's text and the page's; the source's on a tie."""
+        texts = [t for t in (self.item.summary, self.preview.description if self.preview else None) if t]
+        return max(texts, key=len, default=None)
 
 
 @dataclass
@@ -397,7 +405,7 @@ def fetch_previews(state: State, fetch, workers: int = 8) -> tuple[int, list[tup
 def fetch_rss_previews(
     state: State, feeds: Sequence[Rss], fetch, workers: int = 8
 ) -> tuple[int, list[tuple[str, str]]]:
-    """Fetch the previews of the enriched feeds' items that lack an image or an excerpt, with the stories' retry rules.
+    """Fetch the previews of the enriched feeds' items that lack an image or have only a teaser, with the stories' retry rules.
 
     With exclude_paywalled every item's page is fetched: it says whether the item is paywalled.
     """
@@ -408,7 +416,7 @@ def fetch_rss_previews(
         for entry in state.rss.get(feed.file, RssFeed()).items.values():
             if entry.preview is not None or entry.attempts >= MAX_ATTEMPTS:
                 continue
-            if entry.item.link and (feed.exclude_paywalled or not (entry.item.image and entry.item.summary)):
+            if entry.item.link and (feed.exclude_paywalled or not entry.item.image or len(entry.item.summary) < TEASER):
                 todo.setdefault(entry.item.link, []).append(entry)
             else:
                 entry.preview = Preview()  # nothing to fetch, or nothing missing
@@ -493,17 +501,23 @@ def check_hacker_news(
     return looked_up, failed
 
 
+def held_back(entry: Entry | RssEntry) -> bool:
+    """Whether exclude_paywalled hides a story or an item: its page says it's paywalled, or hasn't been read yet.
+
+    Holding back an unread page means a paywalled story never shows for a run;
+    after MAX_ATTEMPTS failed fetches it shows.
+    """
+    if entry.preview is None:
+        return entry.attempts < MAX_ATTEMPTS
+    return bool(entry.preview.paywalled)
+
+
 def visible(feed: Rss, entry: RssEntry, floor: int) -> bool:
     """Whether a feed shows an item it holds.
 
-    exclude_paywalled hides an item whose page says it's paywalled, and one
-    whose page hasn't been read yet, so a paywalled item never shows for a
-    run; after MAX_ATTEMPTS failed fetches it shows. exclude_on_hacker_news
-    hides an item an HN story with its link gave floor points or more.
+    exclude_paywalled hides the items held_back. exclude_on_hacker_news hides
+    an item an HN story with its link gave floor points or more.
     """
-    if feed.exclude_paywalled:
-        if entry.preview is None and entry.attempts < MAX_ATTEMPTS:
-            return False
-        if entry.preview is not None and entry.preview.paywalled:
-            return False
+    if feed.exclude_paywalled and held_back(entry):
+        return False
     return not (feed.exclude_on_hacker_news and (entry.hn_points or 0) >= floor)

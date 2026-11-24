@@ -63,7 +63,7 @@ def test_parse_hits_fills_defaults_and_skips_untitled_hits():
     ask = stories[0]
     assert ask.url is None
     assert (ask.points, ask.comments) == (0, 0)
-    assert ask.text == "Ask & tell more"
+    assert ask.text == "Ask & tell\n\nmore"
     assert ask.comments_url == "https://news.ycombinator.com/item?id=1"
     assert stories[1].url == "https://example.com/3"
     assert stories[1].text == ""

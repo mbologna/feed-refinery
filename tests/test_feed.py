@@ -16,6 +16,7 @@ from feed_refinery.feed import (
     domain,
     item_html,
     last_build_date,
+    reading_time,
     render_digest,
     render_feed,
     render_rss_feed,
@@ -78,17 +79,16 @@ def test_item_html_escapes_and_links():
     entry = Entry(story(), Preview("https://cdn.example.com/i.png?x=1&y=2", "An excerpt <b>raw</b>", "Example"))
     assert item_html(entry, CREATED + 5 * HOUR) == (
         '<p><img src="https://cdn.example.com/i.png?x=1&amp;y=2" alt=""></p>\n'
-        "<p><b>Example</b></p>\n"
         "<p>An excerpt &lt;b&gt;raw&lt;/b&gt;</p>\n"
-        '<p><a href="https://www.example.com/post?a=1&amp;b=2">Article</a> · '
+        '<p><a href="https://www.example.com/post?a=1&amp;b=2">Example</a> · '
         '<a href="https://news.ycombinator.com/item?id=42">37 comments</a> · 150 points · 5 hours ago by pg</p>'
     )
 
 
-def test_item_without_preview_shows_the_domain():
+def test_item_without_preview_labels_the_article_link_with_the_domain():
     html = item_html(Entry(story(points=1, comments=1, author="")), CREATED + 30)
-    assert "<img" not in html
-    assert "<p><b>example.com</b></p>" in html
+    assert "<img" not in html and "<b>" not in html
+    assert html.startswith('<p><a href="https://www.example.com/post?a=1&amp;b=2">example.com</a> · ')
     assert "1 comment</a> · 1 point · 🔥 just now</p>" in html
 
 
@@ -112,7 +112,7 @@ def test_age_line_uses_the_bots_markers(elapsed, line):
 def test_submitter_text_follows_the_page_excerpt():
     entry = Entry(story(text="I built this <alone>"), Preview(description="The page says"))
     html = item_html(entry, CREATED)
-    assert "<p>The page says</p>\n<blockquote>I built this &lt;alone&gt;</blockquote>" in html
+    assert "<p>The page says</p>\n<blockquote><p>I built this &lt;alone&gt;</p></blockquote>" in html
 
 
 def test_submitter_text_stands_in_for_a_missing_excerpt():
@@ -181,7 +181,39 @@ def test_top_comment_line():
         '<p>💬 <b>bob &lt;b&gt;</b>: Nice &amp; clean <a href="https://news.ycombinator.com/item?id=7">→</a></p>'
         in html
     )
-    assert html.index("💬") < html.index("Article")
+    assert html.index("💬") < html.index("example.com")
+
+
+def test_item_keeps_the_paragraphs_of_the_excerpt_the_text_and_the_comment():
+    entry = Entry(
+        story(text="Mine.\n\nAll mine."),
+        Preview(description="The page.\n\nMore of it."),
+        comment=Comment("7", "bob", "First.\n\nSecond."),
+    )
+    html = item_html(entry, CREATED)
+    assert "<p>The page.</p>\n<p>More of it.</p>\n<blockquote><p>Mine.</p>\n<p>All mine.</p></blockquote>" in html
+    assert '<p>💬 <b>bob</b>: First.</p>\n<p>Second. <a href="https://news.ycombinator.com/item?id=7">→</a></p>' in html
+
+
+@pytest.mark.parametrize(
+    ("words", "preview", "line"),
+    [
+        (None, None, None),
+        (199, None, None),  # too few words to tell: a page its scripts fill in, or only the lede
+        (200, None, "1 min read"),
+        (2300, Preview(), "10 min read"),
+        (2300, Preview(paywalled=True), None),  # the count covers only what the paywall lets through
+    ],
+)
+def test_reading_time(words, preview, line):
+    assert reading_time(words, preview) == line
+
+
+def test_item_shows_the_reading_time_after_the_article_link():
+    entry = Entry(story(), Preview(description="Text", site_name="Example", words=1150))
+    html = item_html(entry, CREATED)
+    assert '">Example</a> · 5 min read · <a href="https://news.ycombinator.com/item?id=42">37 comments</a>' in html
+    assert html.startswith("<p>Text</p>")  # what readers show in a list
 
 
 def test_categories_and_channel_image():
@@ -224,6 +256,18 @@ def test_digest_document():
     assert '<h3>2. <a href="https://news.ycombinator.com/item?id=2">' in html
     assert "<p>Ask text</p>" in html
     assert "1 point · " in html and "1 comment</a></p>" in html
+
+
+def test_digest_shows_the_first_paragraph_of_each_story_cut_short():
+    long = "Word " * 200
+    entry = Entry(story(), Preview(description=f"First paragraph.\n\n{long}", site_name="Site"))
+    doc = render_digest(Digest("d.xml", "D"), [(dt.date(2026, 11, 18), [entry])], "u", NOW)
+    html = ET.fromstring(doc).find("channel/item").findtext("description")
+    assert "<p><b>Site</b> · First paragraph.</p>" in html and "Word" not in html
+    entry = Entry(story(), Preview(description=long.strip()))
+    doc = render_digest(Digest("d.xml", "D"), [(dt.date(2026, 11, 18), [entry])], "u", NOW)
+    html = ET.fromstring(doc).find("channel/item").findtext("description")
+    assert "Word Word…</p>" in html and html.count("Word") < 110
 
 
 def test_digest_entry_without_text_or_image():
@@ -300,6 +344,23 @@ def test_rss_item_html():
         '<p><img src="https://static.example/chiara.png?w=680&amp;h=453" alt=""></p>\n'
         "<p>Uno &lt;b&gt;due&lt;/b&gt; &amp; tre</p>"
     )
+
+
+def test_rss_item_keeps_the_excerpts_paragraphs():
+    html = rss_item_html(RssEntry(rss_item(summary="Uno.\n\nDue & tre.", image=None), 0))
+    assert html == "<p>Uno.</p>\n<p>Due &amp; tre.</p>"
+
+
+def test_rss_item_ends_with_the_site_and_facts_when_they_say_something():
+    with_facts = RssEntry(rss_item(words=920), 0, Preview(site_name="News Site"), hn_points=312)
+    assert rss_item_html(with_facts).endswith(
+        f'<p><a href="{LINK}">News Site</a> · 4 min read · 312 points on Hacker News</p>'
+    )
+    # After an excerpt too long for a reader's preview text, the link alone.
+    long = RssEntry(rss_item(summary="Parola " * 80, image=None), 0)
+    assert rss_item_html(long).endswith(f'</p>\n<p><a href="{LINK}">newssite.example</a></p>')
+    # After a short one, with no facts, nothing: the line would end the preview text.
+    assert "<a " not in rss_item_html(RssEntry(rss_item(), 0))
 
 
 def test_rss_item_without_text_links_to_the_article():

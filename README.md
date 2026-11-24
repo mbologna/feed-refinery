@@ -15,15 +15,17 @@ It's an engine: it builds whatever feeds a `feeds.toml` lists, and [`examples/fe
 Each item of an HN feed has:
 
 - the title, linking to the article (Ask HN and other text posts link to the thread);
-- the page's `og:image` (falling back to `twitter:image`), also as `media:thumbnail` for list views;
-- the site name (or the domain) and the page's description, cut to about 2,000 characters. A page without a description gets its first real paragraph instead (inside `<article>` or `<main>` when it has one);
+- the page's `og:image` (falling back to `twitter:image`, then to the first `<img>` in its `<article>` or `<main>` that isn't declared smaller than 200 pixels), also as `media:thumbnail` for list views;
+- the page's excerpt: its opening paragraphs (inside `<article>` or `<main>` when it has one, from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 2,000 characters;
 - the submitter's own text, for Show HN and other posts that have some, quoted below the page's description (or in its place);
 - the top comment, as HN ranks it, cut to about 2,000 characters, with a link to it;
-- links to the article and the HN thread, the comment count, the points, and the story's age and author, as `150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
+- a last line with the article's link, labelled with its site name (or domain), its reading time, a link to the HN thread with the comment count, the points, and the story's age and author, as `Example · 8 min read · 37 comments · 150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
 - `<comments>` set to the HN thread, as in hnrss;
 - `<category>` tags with the post kind (Show HN, Ask HN, Launch HN, Tell HN) and the linked domain, for reader filters and rules.
 
 Each feed carries an icon (`<image>`), so readers show one next to its name.
+
+The reading time counts the words of the article's paragraphs at 230 a minute. It's left out under 200 words (usually a page its scripts fill in) and for a page that says it's paywalled, where only the lede is there to count.
 
 The counts are a snapshot from when the item was built. A page that blocks bots (`403`), times out or isn't HTML gets an item without the image and excerpt.
 
@@ -33,12 +35,18 @@ Job posts ("Acme (YC S13) Is Hiring") are ads and never become items.
 
 An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categories, and the author as `dc:creator`. Its description has:
 
-- the image: the source's (an image enclosure, `media:content`, `media:thumbnail` or the first `<img>` in its description), else the article page's `og:image`, also as `media:thumbnail`;
-- the excerpt: the source's description as plain text, cut to about 2,000 characters, else the page's description.
+- the image: the source's (an image enclosure, `media:content`, the first `<img>` in its description, then in its full content, that isn't declared smaller than 100 pixels, or `media:thumbnail`, in that order: thumbnails are often small crops), else the article page's, as for HN items, also as `media:thumbnail`;
+- the excerpt: the source's text as plain text, which is its full content (`content:encoded`, Atom `<content>`) when that's longer than its description, or the page's excerpt, whichever is longer, cut to about 2,000 characters.
 
-The item's link leads to the article, so the description doesn't repeat it: readers build their preview text from the description. An item with no excerpt gets a link to the article instead, so its description isn't empty.
+Excerpts, here and in HN items, keep their paragraphs. One that's too long ends with its last whole paragraph or sentence when that keeps at least half of it, else at a word, with an ellipsis.
 
-The article page is fetched only for an item whose source lacks the image or the excerpt, once per item, as for HN stories. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
+A last line links to the article, labelled with its site name (or domain), with its reading time and its points on HN when known. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`), else from the article page, as for HN items; a description alone says nothing of the article's length. Readers build an item's preview text from the start of its description, and the item's own link already leads to the article, so the line is left out after an excerpt of up to 500 characters when it has nothing to add. An item with no excerpt always gets it, so its description isn't empty.
+
+The article page is fetched only for an item whose source lacks the image or has only a teaser (under 500 characters of text), once per item, as for HN stories. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
+
+## Reading in NetNewsWire
+
+NetNewsWire, and Feedly when it syncs it, takes an item's body from its description and shows its first 300 characters, as plain text, in the timeline. Items start with the excerpt, so those characters are the article's opening; the site, reading time and counts come last. The image doubles as `media:content` and `media:thumbnail`, which give the timeline its thumbnail and Feedly its visual, and the article view doesn't repeat it.
 
 ## Feeds
 
@@ -52,16 +60,18 @@ A `feeds.toml` lists the feeds; [`examples/feeds.toml`](examples/feeds.toml) has
 - `max_items`: the most items the feed holds (default 150).
 - `ranked`: `true` keeps only stories in HN's current ranking, the ~500 ids of [`topstories.json`](https://github.com/HackerNews/API#new-top-and-best-stories), at any age (default `false`). This is the list [hackernewsbot](https://github.com/phil-r/hackernewsbot) reads; with `min_points = 150`, `top.xml` holds the stories it posts. The bot posts at most one story per 10 minutes; a feed doesn't need that limit.
 - `exclude_titles`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax); a story whose title matches one never enters the feed, such as `^Launch HN:`, YC companies announcing a product.
+- `exclude_paywalled`: `true` hides the stories whose page's [JSON-LD](https://developers.google.com/search/docs/appearance/structured-data/paywalled-content) says `"isAccessibleForFree": false` (default `false`). Every story's page is read for its preview anyway; a story is held back until its page has been read, and one whose page fails three times shows. A page without the marker counts as free.
 - `site`: the website the feed is about (default `https://news.ycombinator.com/`). It is the channel's `<link>`, which Feedly takes a feed's icon from, so each feed shows its source's icon rather than one shared by every feed here.
 - `icon`: the channel's `<image>`, for readers that show it (default the site's `/favicon.ico`).
 
-Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its image, excerpt and counts:
+Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its image, the first paragraph of its excerpt (up to about 500 characters) and counts:
 
 - `file`, `title`: as for a feed.
 - `top`: stories per day (default 20).
 - `days`: days kept (default 7).
 - `publish_hour`: the UTC hour of the next day when a day appears (default 6), by when late stories have had time to score. A day's list is frozen once published.
 - `exclude_titles`: as for a feed; a matching story never counts among a day's top.
+- `exclude_paywalled`: as for a feed; a paywalled story is left out of its day's list, which then has fewer than `top` stories.
 
 In an HN feed, an item's `pubDate` is when that feed first listed the story, not when it was posted. A story that crosses 100 points a day after it was posted is new to `best.xml` then, and a reader sorting by date shows it at the top. A new feed's first batch is the exception: it carries the stories' post times.
 
@@ -75,7 +85,7 @@ Each `[[rss]]` table publishes items from other feeds:
 - `include_titles`, `exclude_titles`, `include_links`, `exclude_links`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax), each searched anywhere in the item's title or link. Start one with `(?i)` to ignore case.
 - `exclude_authors`: authors, matched against the whole name, ignoring case.
 - `exclude_text`: regular expressions searched in the item's title and the source's whole description, as plain text, when the item first appears. For example, a vendor's studies "sponsored by" it whose titles don't say so.
-- `enrich`: `false` skips fetching article pages, so items carry only what the source gives (default `true`).
+- `enrich`: `false` skips fetching article pages, so items carry only what the source gives (default `true`). With `true`, an item whose source lacks an image or has only a teaser gets the page's image and opening.
 - `exclude_paywalled`: `true` fetches every item's page and hides the items whose [JSON-LD](https://developers.google.com/search/docs/appearance/structured-data/paywalled-content) says `"isAccessibleForFree": false`, anywhere in the page's structured data (default `false`; needs `enrich`). An item is held back until its page has been read, so a paywalled one never shows for a build; one whose page fails three times shows. A page without the marker counts as free. News sites mark their subscriber-only newsletters this way, so one made free gets in by itself.
 - `exclude_on_hacker_news`: `true` hides the items whose link was a story in the HN feeds: one the front page, best or top feeds hold, or one HN gave at least the lowest `min_points` of the `[[feed]]` tables (100 when none sets one), looked up in Algolia by URL. The lookup runs when an item appears and every 6 hours for its first 2 days, while a story's points still grow; a failed one leaves the item shown and is retried on the next build (default `false`).
 - `site`, `icon`: as for an HN feed; `site` defaults to the first source's site (its scheme and host). Set it when that host isn't the site readers know (a `feeds.` host, `github.com`), and `icon` when the site's `/favicon.ico` is missing or wrong.
