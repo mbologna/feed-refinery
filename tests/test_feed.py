@@ -271,7 +271,9 @@ def test_rss_items_keep_the_sources_fields():
         "News Site: articles, from https://www.newssite.example/feed, with each article's image and excerpt"
     )
     assert channel.find(f"{{{ATOM}}}link").get("href") == "https://site.example/newssite.xml"
-    assert channel.findtext("link") == channel.findtext("image/link") == "https://www.newssite.example/"  # the source's site
+    assert (
+        channel.findtext("link") == channel.findtext("image/link") == "https://www.newssite.example/"
+    )  # the source's site
     assert channel.findtext("image/url") == "https://www.newssite.example/favicon.ico"
     item = channel.find("item")
     assert item.findtext("title") == "Cosa dice il film del “pandorogate” & <altro>"
@@ -301,7 +303,9 @@ def test_rss_item_html():
 
 
 def test_rss_item_without_text_links_to_the_article():
-    assert rss_item_html(RssEntry(rss_item(summary="", image=None), 0)) == f'<p><a href="{LINK}">newssite.example</a></p>'
+    assert (
+        rss_item_html(RssEntry(rss_item(summary="", image=None), 0)) == f'<p><a href="{LINK}">newssite.example</a></p>'
+    )
 
 
 def test_rss_items_fall_back_on_the_preview():
@@ -343,7 +347,10 @@ def test_page_describes_rss_feeds():
         exclude_categories=frozenset({"bits", "peanuts"}),
         exclude_titles=(re.compile("x"),),
     )
-    assert describe(filtered) == "items from newssite.example, filtered by 3 rules, with images and excerpts, up to 100 items"
+    assert (
+        describe(filtered)
+        == "items from newssite.example, filtered by 3 rules, with images and excerpts, up to 100 items"
+    )
     merged = Rss(
         "n.xml",
         "N",

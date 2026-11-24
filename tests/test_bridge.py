@@ -69,7 +69,13 @@ def test_set_changes_one_line_and_keeps_the_comments():
 def test_set_adds_a_key_after_the_last_one_not_after_the_next_tables_comment():
     edits = [
         {"op": "set", "kind": "rss", "index": 0, "key": "exclude_sections", "value": ["Sport"]},
-        {"op": "set", "kind": "rss", "index": 0, "key": "include_links", "value": [r"^https://www\.newssite\.example/"]},
+        {
+            "op": "set",
+            "kind": "rss",
+            "index": 0,
+            "key": "include_links",
+            "value": [r"^https://www\.newssite\.example/"],
+        },
     ]
     text = bridge.apply(CONFIG, edits)["text"]
     assert "exclude_titles = ['(?i)^le prime pagine']\n" + 'exclude_sections = ["Sport"]\n' in text

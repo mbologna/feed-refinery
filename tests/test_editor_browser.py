@@ -210,7 +210,7 @@ def test_edit_news_sites_filters_preview_and_save(site):
         expect(diff).to_contain_text("+exclude_titles = ['(?i)^le prime pagine', '^Perché']")
         message = page.locator("#message")
         expect(message).to_have_value("chore(config): change newssite.xml exclude_categories and exclude_titles")
-        expect(page.locator("#message-check")).to_have_text("First line: 70 of 72 characters.")
+        expect(page.locator("#message-check")).to_have_text("First line: 72 of 72 characters.")
 
         # The header rule.
         message.fill("chore(config): Exclude Bits and the explainer on why the bridges of Kyiv matter, from News Site.")
@@ -236,9 +236,9 @@ def test_edit_news_sites_filters_preview_and_save(site):
             and put["message"] == "chore(config): drop Bits and the Kyiv bridges from newssite.xml\n"
         )
         saved = base64.b64decode(put["content"]).decode()
-        assert saved == CONFIG.replace(
-            '"celebrity"]\nexclude_links', '"celebrity", "Bits"]\nexclude_links'
-        ).replace("'(?i)^le prime pagine']", "'(?i)^le prime pagine', '^Perché']")
+        assert saved == CONFIG.replace('"celebrity"]\nexclude_links', '"celebrity", "Bits"]\nexclude_links').replace(
+            "'(?i)^le prime pagine']", "'(?i)^le prime pagine', '^Perché']"
+        )
         pull = github.sent("POST", "/pulls")
         assert pull["title"] == "chore(config): drop Bits and the Kyiv bridges from newssite.xml"
         assert pull["base"] == "main" and pull["head"] == branch["ref"].removeprefix("refs/heads/")
