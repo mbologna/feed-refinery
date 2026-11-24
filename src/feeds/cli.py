@@ -46,7 +46,10 @@ def fetch_rss(feeds: list[config.Rss], current: state.State) -> dict[str, dict[s
                 # Any error: the source keeps the items it had while the others refresh.
                 except Exception as e:
                     shared[key] = e
-            outcome = outcomes[url] = shared[key]
+            outcome = shared[key]
+            if isinstance(outcome, rss.Fetched) and feed.label(url):
+                outcome = outcome._replace(items=rss.labelled(outcome.items, feed.label(url)))
+            outcomes[url] = outcome
             if isinstance(outcome, Exception):
                 print(f"::warning::{feed.file}: {url}: {type(outcome).__name__}: {outcome}")
             elif outcome.status == 304:

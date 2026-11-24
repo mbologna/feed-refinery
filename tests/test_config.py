@@ -263,3 +263,26 @@ def test_rss_json_source():
 def test_bad_json_sources_fail_with_a_message(json_value, message):
     with pytest.raises(ConfigError, match=message):
         parse(RSS + f'source = "https://a.example/api"\njson = {json_value}\n')
+
+
+def test_rss_source_titles():
+    (feed,) = parse(
+        RSS
+        + 'sources = ["https://a.example/r.atom", "https://b.example/r.atom"]\n'
+        + '[rss.source_titles]\n"https://a.example/r.atom" = " Alpha "\n'
+    ).rss
+    assert feed.source_titles == (("https://a.example/r.atom", "Alpha"),)
+    assert feed.label("https://a.example/r.atom") == "Alpha" and feed.label("https://b.example/r.atom") is None
+
+
+@pytest.mark.parametrize(
+    ("titles", "message"),
+    [
+        ('source_titles = "Alpha"', "source_titles must be a table"),
+        ('source_titles = { "https://a.example/r.atom" = "" }', "source_titles must be a table"),
+        ('source_titles = { "https://c.example/r.atom" = "C" }', "https://c.example/r.atom is not one of the sources"),
+    ],
+)
+def test_bad_source_titles_fail_with_a_message(titles, message):
+    with pytest.raises(ConfigError, match=message):
+        parse(RSS + 'source = "https://a.example/r.atom"\n' + titles + "\n")

@@ -120,7 +120,8 @@ def _set(table: Table, key: str, value: Any) -> None:
         if old.unwrap() != value:
             container[key] = _value(value, old)
         return
-    keys = [k for k, _ in container.body[: _trailing(container.body)] if k is not None]
+    # After the last plain key: a key after a sub-table ([rss.source_titles]) would belong to it.
+    keys = [k for k, v in container.body[: _trailing(container.body)] if k is not None and not isinstance(v, Table)]
     if keys:
         container._insert_after(keys[-1].key, key, _value(value))
     else:
@@ -258,7 +259,7 @@ def preview(table: dict[str, Any], bodies: dict[str, dict[str, Any]], now: int |
             sources[url] = {"items": 0, "error": str(e)}
             continue
         sources[url] = {"items": len(found), "error": None}
-        listed.append((url, found))
+        listed.append((url, rss.labelled(found, feed.label(url))))
     chosen = rss.select(feed, listed)
     stories = sorted(chosen.items, key=lambda k: chosen.items[k].published or now, reverse=True)
     published = stories[: feed.max_items]

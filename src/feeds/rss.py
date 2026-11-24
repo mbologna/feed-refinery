@@ -140,6 +140,14 @@ def _json_date(value: object, fmt: str | None) -> int | None:
     return int(moment.timestamp())
 
 
+def labelled(items: list[Item], label: str | None) -> list[Item]:
+    """The items with label in front of their titles, unless a title already starts with it."""
+    if not label:
+        return items
+    folded = label.casefold()
+    return [i if i.title.casefold().startswith(folded) else replace(i, title=f"{label} {i.title}") for i in items]
+
+
 def parse_json(body: bytes, base: str, fields: JsonFields) -> list[Item]:
     """The items of a JSON document, as fields maps them, in the document's order.
 

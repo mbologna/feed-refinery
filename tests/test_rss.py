@@ -16,6 +16,7 @@ from feeds.rss import (
     dedup_key,
     fetch,
     keep,
+    labelled,
     normal_title,
     parse,
     parse_json,
@@ -566,3 +567,13 @@ def test_fetch_reads_a_json_source(web):
     web.json(BLOG_API, {"data": {"results": [{"title": "T", "url": "/t"}]}})
     fetched = fetch(BLOG_API, fields=JsonFields(items="data.results", title="title", link="url"))
     assert [i.link for i in fetched.items] == ["https://blog.example/t"]
+
+
+def test_labelled_puts_the_label_in_front_unless_the_title_has_it():
+    items = [item(title="v2.15.3"), item(title="Longhorn v1.12.2"), item(title="longhorn v1.12.3")]
+    assert [i.title for i in labelled(items, "Longhorn")] == [
+        "Longhorn v2.15.3",
+        "Longhorn v1.12.2",
+        "longhorn v1.12.3",
+    ]
+    assert labelled(items, None) is items
