@@ -70,7 +70,7 @@ Each `[[rss]]` table publishes items from other feeds:
 - `file`, `title`: as for an HN feed.
 - `source`: the URL of an RSS or Atom feed; or `sources`, a list of them, merged into one feed. A table has one or the other.
 - `include_categories`, `exclude_categories`: categories, matched against the whole category, ignoring case.
-- `include_sections`, `exclude_sections`: sections, matched like categories but only against the item's first category. WordPress sites, Tech Site among them, list the sections first and then the free-form tags, which may reuse a section's name.
+- `include_sections`, `exclude_sections`: sections, matched like categories but only against the item's first category, for sites that list the section first and then free-form tags reusing section names. Check the site first: Tech Site lists categories alphabetically, so there the section is in the URL and `exclude_links` is the filter to use.
 - `include_titles`, `exclude_titles`, `include_links`, `exclude_links`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax), each searched anywhere in the item's title or link. Start one with `(?i)` to ignore case.
 - `exclude_authors`: authors, matched against the whole name, ignoring case.
 - `enrich`: `false` skips fetching article pages, so items carry only what the source gives (default `true`).
@@ -104,10 +104,10 @@ sources = [
   "https://feeds.techsite.example/gadgets",
   "https://feeds.techsite.example/apple",
 ]
-exclude_sections = ["Policy", "Space", "Gaming", "Cars", "Culture"]
+exclude_links = ['^https?://techsite\.example/(tech-policy|space|gaming|cars|culture)/']
 ```
 
-`index` lists every article, but only the newest 20, about three days' worth. It brings the AI, Science and Health sections, which have no feeds of their own; the section feeds keep older items, such as month-old Features, that `index` no longer lists. The unwanted sections are excluded by section rather than by category because articles worth keeping carry those names as tags: the Grand Theft Auto VI review is filed under Features and tagged Gaming, a piece on Tesla's autonomy plans is AI tagged Cars. `exclude_categories` would drop them; `exclude_sections` keeps them. An exclude list rather than an include list lets a section Tech Site adds later come through.
+`index` lists every article, but only the newest 20, about three days' worth. It brings the AI, Science and Health sections, which have no feeds of their own; the section feeds keep older items, such as month-old Features, that `index` no longer lists. The unwanted sections are excluded by the article's URL, `techsite.example/<section>/`, the one place Tech Site states the section. Its categories don't: they come in alphabetical order, and articles worth keeping carry section names as tags (the Grand Theft Auto VI review is filed under Features and tagged Gaming; a piece on Grok filed under Policy starts with "AI"). `exclude_categories` would drop the first, and `exclude_sections` (first category) would keep the second. An exclude list rather than an include list lets a section Tech Site adds later come through.
 
 `dedupe = "link+title"` would also merge stories published under different URLs.
 
