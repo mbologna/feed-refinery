@@ -5,15 +5,14 @@ import pytest
 
 from feeds.config import ConfigError, Digest, Feed, JsonFields, Rss, load, parse
 
-REPO_CONFIG = Path(__file__).parent.parent / "feeds.toml"
+EXAMPLE_CONFIG = Path(__file__).parent.parent / "examples" / "feeds.toml"
 
 
-def test_the_repo_config_is_valid():
-    # Only that it builds: the editor's pull requests change feeds.toml and
-    # merge themselves once the checks pass, so a test of what it holds would
-    # block them. The parsing tests below use their own tables.
-    conf = load(REPO_CONFIG)
-    assert conf.files
+def test_the_example_config_is_valid():
+    # The real feeds.toml is private (mbologna/feeds-config); the example
+    # shows every kind of table. The parsing tests below use their own tables.
+    conf = load(EXAMPLE_CONFIG)
+    assert conf.files and conf.feeds and conf.digests and conf.rss
 
 
 def test_defaults_apply():

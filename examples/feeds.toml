@@ -1,0 +1,167 @@
+# An example feeds.toml: every kind of table and most keys. A real one is
+# private to whoever runs the build (see the README, "Run it with a private
+# config"): it lists what they read. CI checks that this file builds.
+#
+# A [[feed]] table for each Hacker News feed, [[digest]] for a daily HN
+# digest, [[rss]] for items from other sites' feeds. Removing a table stops
+# publishing its file.
+#
+#   file          the published file name, ending in .xml
+#   title         the feed's title in the reader
+#   tags          Algolia tags: front_page, story, show_hn, ask_hn, ...
+#                 (comma-separated tags must all match). With front_page the
+#                 feed follows the current front page; otherwise it takes the
+#                 newest matching stories of the last window_hours.
+#   min_points    only stories with at least this many points (default 0)
+#   min_comments  only stories with at least this many comments (default 0)
+#   window_hours  how long a story stays in the feed after it first matched
+#                 (default 48); a story that still matches always stays
+#   max_items     the most items the feed holds (default 150)
+#   ranked        true: only stories in HN's current ranking (the ~500 ids of
+#                 topstories.json), at any age (default false)
+#   exclude_titles  drop stories whose title matches any of these regular
+#                 expressions
+#   site          the website the feed is about, the channel's <link>: Feedly
+#                 shows its icon (default https://news.ycombinator.com/)
+#   icon          the channel's <image> for other readers (default the
+#                 site's /favicon.ico)
+#
+# Job posts ("… (YC S13) Is Hiring") are ads and never appear.
+
+[[feed]]
+file = "frontpage.xml"
+title = "Hacker News: front page"
+tags = "front_page"
+exclude_titles = ['^Launch HN:']
+
+[[feed]]
+file = "best.xml"
+title = "Hacker News: 100+ points"
+tags = "story"
+min_points = 100
+
+[[feed]]
+file = "show.xml"
+title = "Show HN: 50+ points"
+tags = "show_hn"
+min_points = 50
+window_hours = 72
+
+# One item per UTC day with that day's top stories by points.
+#
+#   file          the file name, as for [[feed]]
+#   title         the feed's title
+#   top           stories per day (default 20)
+#   days          days kept (default 7)
+#   publish_hour  the UTC hour of the next day when a day appears (default 6:
+#                 07:00 in Rome in winter, by when late stories have scored)
+#   exclude_titles  stories whose title matches any of these never count
+#                 among a day's top
+[[digest]]
+file = "digest.xml"
+title = "Hacker News: daily digest"
+top = 15
+
+# Items from RSS or Atom feeds, filtered, merged and enriched. Each [[rss]]
+# table publishes one feed:
+#
+#   file                the file name, as for [[feed]]
+#   title               the feed's title
+#   source / sources    one feed URL, or a list of them merged into one feed
+#   json                for sources that are JSON documents, not RSS or Atom:
+#                       { items = "path.to.list", title = "…", link = "…" }
+#                       plus optional date, date_format (strptime), summary,
+#                       author and image; each value a dotted path
+#   site, icon          as for [[feed]]; site defaults to the first source's
+#                       site (scheme and host), icon to its /favicon.ico
+#   source_titles       a [rss.source_titles] table of source URL = "label":
+#                       the label goes in front of that source's titles, for
+#                       sources whose titles don't say what they are
+#   include_categories  keep only items with one of these categories
+#   exclude_categories  drop items with any of these categories
+#   include_sections    keep only items whose first category is one of these
+#   exclude_sections    drop items whose first category is one of these
+#                       (all four match the whole category, ignoring case;
+#                       the first category is the section on WordPress sites)
+#   include_titles      keep only items whose title matches one of these
+#   exclude_titles      drop items whose title matches any of these
+#   include_links       keep only items whose link matches one of these
+#   exclude_links       drop items whose link matches any of these
+#                       (all four are regular expressions, matched anywhere;
+#                       start one with (?i) to ignore case)
+#   exclude_authors     drop items by these authors (whole name, ignoring case)
+#   exclude_text        drop items whose title or description text matches any
+#                       of these regular expressions, when first seen
+#   enrich              fetch each article's image and excerpt when the source
+#                       lacks them (default true)
+#   exclude_paywalled   fetch every article's page and hide the ones it marks as
+#                       not free (JSON-LD isAccessibleForFree false); needs
+#                       enrich (default false)
+#   exclude_on_hacker_news  hide items whose link was a story in the [[feed]]
+#                       feeds: on the front page, or with at least the lowest
+#                       min_points of the [[feed]] tables (default false)
+#   max_items           the most items the feed holds (default 100)
+#   keep_days           how long an item no source lists any more stays
+#                       (default 7)
+#   dedupe              "link" (default): items with the same canonical link
+#                       or guid are one; "link+title": also items with the
+#                       same normalised title
+#
+# Includes apply first, then excludes. Items keep the source's title, link,
+# guid, date and categories.
+
+
+# A news site without its daily comic, its podcasts and its newsletters for
+# subscribers (they declare isAccessibleForFree false), each article with its
+# image and excerpt.
+[[rss]]
+file = "news.xml"
+title = "News: articles"
+source = "https://news.example.org/feed"
+exclude_categories = ["comics", "podcast"]
+exclude_links = ['^https://news\.example\.org/(episodes|events)/']
+exclude_paywalled = true
+
+# Two blogs merged into one feed, a story both carry appearing once, without
+# sponsored posts.
+[[rss]]
+file = "engineering.xml"
+title = "Engineering blogs"
+sources = [
+  "https://blog.example.com/feed.xml",
+  "https://engineering.example.net/atom.xml",
+]
+dedupe = "link+title"
+exclude_titles = ['(?i)\bwebinar\b']
+exclude_text = ['(?i)\bsponsored by\b']
+
+# A link aggregator without the stories the Hacker News feeds above carried.
+[[rss]]
+file = "links.xml"
+title = "Links, minus HN"
+source = "https://links.example.org/top.rss"
+exclude_on_hacker_news = true
+
+# A blog with no feed whose page reads its posts from a JSON API.
+[[rss]]
+file = "blog.xml"
+title = "A blog without a feed"
+source = "https://www.example.com/api/posts?lang=en"
+json = { items = "results", title = "title", link = "url", date = "date", date_format = "%B %d, %Y", summary = "excerpt" }
+site = "https://www.example.com/"
+
+# Releases of two projects, each titled with its name, without pre-releases.
+[[rss]]
+file = "releases.xml"
+title = "Releases"
+sources = [
+  "https://github.com/example/alpha/releases.atom",
+  "https://github.com/example/beta/releases.atom",
+]
+exclude_titles = ['(?i)[-.~ ](rc|alpha|beta|preview|dev|nightly)[-.]?\d*\b']
+enrich = false
+keep_days = 60
+
+[rss.source_titles]
+"https://github.com/example/alpha/releases.atom" = "Alpha"
+"https://github.com/example/beta/releases.atom" = "Beta"

@@ -1,21 +1,22 @@
-"""Command line: build the feeds, check the published ones' age, or check the feed list."""
+"""Command line: build the feeds, publish them to Workers KV, check the published ones' age, or check the feed list."""
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import importlib.resources
+import io
 import json
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-from . import PAGE_URL, STATE_NAME, USER_AGENT, comments, config, preview, rss, source, state
+from . import HEALTH_NAME, PAGE_URL, STATE_NAME, USER_AGENT, comments, config, kv, preview, rss, source, state
 from .feed import last_build_date, plural, render_digest, render_feed, render_rss_feed
 from .page import render_page
 
-HEALTH_NAME = "health.json"
 IMAGE_RATE_FLOOR = 0.3  # below this share of items with an image, something is blocking or broken
 RSS_MAX_AGE = 3 * 3600  # an RSS feed is not ok while one of its sources last answered longer ago than this
 
@@ -225,6 +226,70 @@ def check_config(config_path: Path) -> None:
         print(f"  {file}")
 
 
+def quiet_build(config_path: Path, output_dir: Path, page_url: str, previous: str, now: dt.datetime) -> int:
+    """build() with its log kept back: only totals, for a public CI log of a private feeds.toml.
+
+    The log names feeds, sources and article URLs, and so would an error
+    message: an error prints only its kind. Run the build locally for the
+    details.
+    """
+    log = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
+            build(config_path, output_dir, page_url, previous, now)
+    except config.ConfigError:
+        print("feeds.toml is invalid: run check-config on it", file=sys.stderr)
+        return 2
+    except Exception as e:  # anything else: its message may name a feed or a source
+        print(f"build failed: {type(e).__name__}", file=sys.stderr)
+        return 1
+    health = json.loads((output_dir / HEALTH_NAME).read_text(encoding="utf-8"))
+    items = sum(f.get("items", 0) for kind in ("feeds", "rss") for f in health.get(kind, {}).values())
+    stale = sum(1 for f in health.get("rss", {}).values() if not f.get("ok"))
+    counts = [
+        plural(len(health.get("feeds", {})), "HN feed"),
+        plural(len(health.get("digests", {})), "digest"),
+        plural(len(health.get("rss", {})), "RSS feed"),
+    ]
+    print(f"built {', '.join(counts)}: {plural(items, 'item')}, {stale} stale")
+    warnings = log.getvalue().count("::warning::")
+    if warnings:
+        print(f"::warning::{plural(warnings, 'warning')}; the details stay out of this log")
+    return 0
+
+
+def publish(output_dir: Path, config_path: Path, now: dt.datetime) -> int:
+    """Write the build to Workers KV (credentials from the environment), and print counts only."""
+    files = config.load(config_path).files
+    try:
+        done = kv.publish(kv.Kv.from_env(), output_dir, files, now)
+    except kv.KvError as e:
+        print(f"publish failed: {e}", file=sys.stderr)
+        return 1
+    print(
+        f"kv: {done.written} written, {done.unchanged} unchanged, {done.deleted} deleted; "
+        f"{done.writes_today} of {kv.DAILY_WRITES} writes today"
+    )
+    if done.guard:
+        print(f"::warning::write guard on: {plural(done.deferred, 'count-only refresh')} skipped until 00:00 UTC")
+    return 0
+
+
+def kv_get(key: str, path: Path) -> int:
+    """Copy a key's value to path; nothing, and success, when KV lacks it."""
+    try:
+        value = kv.Kv.from_env().get(key)
+    except kv.KvError as e:
+        print(f"kv-get failed: {e}", file=sys.stderr)
+        return 1
+    if value is None:
+        print(f"{key}: not in KV")
+        return 0
+    path.write_bytes(value)
+    print(f"{key}: {len(value)} bytes")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="feeds", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -238,6 +303,15 @@ def main(argv: list[str] | None = None) -> int:
         help="URL or path of the previous state.json; an empty string starts fresh "
         "(default: state.json under --page-url)",
     )
+    b.add_argument("--quiet", action="store_true", help="print totals only, for a public log: no feed, source or URL")
+
+    pub = sub.add_parser("kv-publish", help="write a build to Workers KV, only what changed (env: CLOUDFLARE_*)")
+    pub.add_argument("output_dir", type=Path)
+    pub.add_argument("--config", type=Path, default=Path("feeds.toml"))
+
+    get = sub.add_parser("kv-get", help="copy a Workers KV key to a file, such as the previous state.json")
+    get.add_argument("key")
+    get.add_argument("path", type=Path)
 
     c = sub.add_parser("check", help="fail when a published feed is missing or older than --max-age-hours")
     c.add_argument("--config", type=Path, default=Path("feeds.toml"))
@@ -258,8 +332,14 @@ def main(argv: list[str] | None = None) -> int:
             # comments of the stories the newer run added, nothing more.
             default = feed_url(args.page_url, STATE_NAME)
             previous = default if args.previous_state is None else args.previous_state
+            if args.quiet:
+                return quiet_build(args.config, args.output_dir, args.page_url, previous, now)
             build(args.config, args.output_dir, args.page_url, previous, now)
             return 0
+        if args.command == "kv-publish":
+            return publish(args.output_dir, args.config, now)
+        if args.command == "kv-get":
+            return kv_get(args.key, args.path)
         if args.command == "check-config":
             check_config(args.config)
             return 0

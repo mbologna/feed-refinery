@@ -1,15 +1,19 @@
 // The feeds editor: edit feeds.toml with the build's own checks, preview an
 // RSS feed's filters against its live sources, and save through a pull
-// request that merges itself once the checks pass.
+// request that the config repository's workflow merges once its check passes.
+// The config and the published feeds are private: feeds.toml lives in a
+// private repository, and the feeds Worker gives the build's health and the
+// published feeds (/editor/health, /editor/feed) only to this token.
 //
 // Python (worker.js, bridge.py) validates, edits and previews; this file is
 // the page, the GitHub API and the source relay. No build step, no framework.
 
-const REPO = "mbologna/feeds";
+const REPO = "mbologna/feeds-config";
 const API = "https://api.github.com";
 const CONFIG = "feeds.toml";
 const TOKEN_KEY = "feeds-editor-token";
-const SITE = new URL("../", location.href); // the published feeds and health.json
+const HEALTH = new URL("health", location.href); // the build's health.json, with subscription URLs
+const FEED = new URL("feed", location.href); // feed?file=: a published feed
 const RELAY = new URL("fetch", location.href); // GET fetch?url=…, served by the feeds Worker
 const POLL = 10_000;
 const HEADER_LIMIT = 72;
@@ -250,10 +254,16 @@ async function gh(path, { method = "GET", body, auth = true } = {}) {
   return data;
 }
 
-async function graphql(query, variables) {
-  const data = await gh("/graphql", { method: "POST", body: { query, variables } });
-  if (data?.errors?.length) throw new Error(data.errors.map((e) => e.message).join("; "));
-  return data.data;
+// The feeds Worker's endpoints for this page, which take the same token.
+function fromWorker(url) {
+  return fetch(url, { headers: { Authorization: `Bearer ${state.token}` }, cache: "no-store" });
+}
+
+async function loadHealth() {
+  return fromWorker(HEALTH).then(
+    (r) => (r.ok ? r.json() : null),
+    () => null,
+  );
 }
 
 // Signing in and loading.
@@ -297,10 +307,7 @@ async function loadConfig() {
   state.edits = [];
   state.current = { text, diff: "", error: loaded.error };
   state.selected = null;
-  state.health = await fetch(new URL("health.json", SITE), { cache: "no-store" }).then(
-    (r) => (r.ok ? r.json() : null),
-    () => null,
-  );
+  state.health = await loadHealth();
   renderList();
   renderEditor();
   renderStatus();
@@ -510,7 +517,24 @@ function renderEditor() {
     { class: "fields" },
     FIELDS[kind].map((field) => renderField(kind, entry, field)),
   );
-  section.replaceChildren(head, fields, kind === "rss" ? renderTester(entry) : null);
+  const url = state.health?.urls?.[data.file];
+  const subscribe = url
+    ? el(
+        "div",
+        { class: "field wide" },
+        el("label", { for: "subscribe-url" }, "Subscription URL"),
+        el("input", {
+          id: "subscribe-url",
+          type: "text",
+          class: "mono",
+          readonly: true,
+          value: url,
+          onfocus: (e) => e.target.select(),
+        }),
+        el("small", {}, "Private: whoever has it can read the feed."),
+      )
+    : null;
+  section.replaceChildren(head, subscribe, fields, kind === "rss" ? renderTester(entry) : null);
   if (kind === "rss") renderRssPreview(entry);
   else renderPublished(entry);
 }
@@ -779,7 +803,7 @@ async function renderPublished(entry) {
   $("preview-title").textContent = "Published now";
   const file = entry.data.file;
   body.replaceChildren(el("p", { class: "hint" }, "Loading…"));
-  const response = await fetch(new URL(file, SITE), { cache: "no-store" }).catch(() => null);
+  const response = await fromWorker(`${FEED}?file=${encodeURIComponent(file)}`).catch(() => null);
   if (state.selected?.entry !== entry) return;
   if (!response?.ok) {
     body.replaceChildren(el("p", { class: "hint" }, "Not published yet."));
@@ -1095,8 +1119,8 @@ function renderFacets(entry, facet, key, after) {
   );
 }
 
-// Saving: a branch, a commit, a pull request with auto-merge, then the
-// merge, the deploy and the live site.
+// Saving: a branch, a commit, a pull request that the config repository's
+// workflow merges, then the build that merge dispatches.
 
 function changes() {
   const parts = [];
@@ -1278,16 +1302,6 @@ async function save() {
     });
     current.done(`#${pr.number}`);
     current.link(pr.html_url, "open on GitHub");
-    current = step("Auto-merge");
-    try {
-      await graphql(
-        "mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) { clientMutationId } }",
-        { id: pr.node_id },
-      );
-      current.done("merges itself once the checks pass");
-    } catch (error) {
-      current.failed(`not enabled (${error.message}); merge the pull request yourself once the checks pass`);
-    }
     await follow(pr);
   } catch (error) {
     current?.failed(error.message);
@@ -1310,7 +1324,7 @@ async function follow(pr) {
       current.failed("closed without merging");
       return;
     }
-    const runs = await gh(`/repos/${REPO}/commits/${now.head.sha}/check-runs`, { auth: false }).catch(() => null);
+    const runs = await gh(`/repos/${REPO}/commits/${now.head.sha}/check-runs`).catch(() => null);
     if (runs) {
       const done = runs.check_runs.filter((r) => r.status === "completed");
       const failed = done.filter((r) => !["success", "skipped", "neutral"].includes(r.conclusion));
@@ -1323,35 +1337,13 @@ async function follow(pr) {
     await wait(POLL);
   }
   current.done(`merged ${new Date(merged.merged_at).toLocaleTimeString()}`);
-  current = step("Deploy");
-  for (;;) {
-    const runs = await gh(`/repos/${REPO}/actions/runs?head_sha=${merged.merge_commit_sha}&event=push`, {
-      auth: false,
-    }).catch(() => null);
-    const run = runs?.workflow_runs?.find((r) => r.name === "CI");
-    if (run) {
-      const jobs = await gh(`/repos/${REPO}/actions/runs/${run.id}/jobs`, { auth: false }).catch(() => null);
-      const deploy = jobs?.jobs?.find((j) => j.name === "Deploy to GitHub Pages");
-      if (deploy?.conclusion === "success") break;
-      if (run.status === "completed" && run.conclusion !== "success" && deploy?.conclusion !== "success") {
-        current.failed(`the CI run ended with ${run.conclusion}`);
-        current.link(run.html_url, "see the run");
-        return;
-      }
-      current.note(deploy ? `deploy ${deploy.status}` : `CI ${run.status}`);
-    }
-    await wait(POLL);
-  }
-  current.done("deployed");
+  // The merge dispatches the build; it's live once health.json says so.
   current = step("Live");
   const since = Date.parse(merged.merged_at) / 1000;
   for (;;) {
-    const health = await fetch(new URL("health.json", SITE), { cache: "no-store" }).then(
-      (r) => r.json(),
-      () => null,
-    );
+    const health = await loadHealth();
     if (health?.built >= since) break;
-    current.note("waiting for the site's cache (up to 10 minutes)");
+    current.note("waiting for the build the merge started (a minute or two)");
     await wait(POLL);
   }
   current.done("the published feeds use the new feeds.toml");

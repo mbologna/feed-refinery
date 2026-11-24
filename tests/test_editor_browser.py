@@ -33,7 +33,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 CONFIG = (FIXTURES / "feeds.toml").read_text(encoding="utf-8")
 NEWS_SAMPLE = (FIXTURES / "newssite.xml").read_bytes()
 SOURCE = "https://www.newssite.example/feed"
-REPO = "https://api.github.com/repos/mbologna/feeds"
+REPO = "https://api.github.com/repos/mbologna/feeds-config"
 BOOT = 180_000  # ms: Pyodide and the packages come from the network
 
 
@@ -62,6 +62,7 @@ def site(tmp_path_factory):
     """The editor and its wheel, served as the site publishes them, under /editor/."""
     root = tmp_path_factory.mktemp("site")
     shutil.copytree(ROOT / "src/feeds/site/editor", root / "editor")
+    shutil.copy(ROOT / "src/feeds/site/favicon.svg", root / "editor")
     wheel = os.environ.get("FEEDS_WHEEL")
     if not wheel:
         dist = tmp_path_factory.mktemp("dist")
@@ -84,6 +85,7 @@ class GitHub:
     def __init__(self) -> None:
         self.requests: list[tuple[str, str, dict | None]] = []
         self.auth: dict[str, str | None] = {}  # path -> the Authorization header it came with
+        self.pr_polls = 0  # the pull request is open on the first poll, merged after
 
     def answer(self, route) -> None:
         request = route.request
@@ -92,36 +94,36 @@ class GitHub:
         self.requests.append((request.method, request.url, body))
         self.auth[path] = request.headers.get("authorization")
         answers = {
-            ("GET", "/repos/mbologna/feeds"): {"permissions": {"push": True}},
+            ("GET", "/repos/mbologna/feeds-config"): {"permissions": {"push": True}},
             ("GET", "/user"): {"login": "tester"},
-            ("GET", "/repos/mbologna/feeds/branches/main"): {"commit": {"sha": "c0ffee"}},
-            ("GET", "/repos/mbologna/feeds/contents/feeds.toml"): {
+            ("GET", "/repos/mbologna/feeds-config/branches/main"): {"commit": {"sha": "c0ffee"}},
+            ("GET", "/repos/mbologna/feeds-config/contents/feeds.toml"): {
                 "sha": "blob1",
                 "content": base64.encodebytes(CONFIG.encode()).decode(),
             },
-            ("POST", "/repos/mbologna/feeds/git/refs"): {"ref": "refs/heads/x"},
-            ("PUT", "/repos/mbologna/feeds/contents/feeds.toml"): {"commit": {"sha": "abcdef1234"}},
-            ("POST", "/repos/mbologna/feeds/pulls"): {
+            ("POST", "/repos/mbologna/feeds-config/git/refs"): {"ref": "refs/heads/x"},
+            ("PUT", "/repos/mbologna/feeds-config/contents/feeds.toml"): {"commit": {"sha": "abcdef1234"}},
+            ("POST", "/repos/mbologna/feeds-config/pulls"): {
                 "number": 42,
                 "node_id": "PR_node",
                 "html_url": "https://github.com/mbologna/feeds/pull/42",
             },
-            ("POST", "/graphql"): {"data": {"enablePullRequestAutoMerge": {"clientMutationId": None}}},
-            ("GET", "/repos/mbologna/feeds/pulls/42"): {
+            ("GET", "/repos/mbologna/feeds-config/pulls/42"): {
                 "merged": True,
                 "state": "closed",
                 "merged_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 60)),
                 "merge_commit_sha": "merge1",
                 "head": {"sha": "abcdef1234"},
             },
-            ("GET", "/repos/mbologna/feeds/actions/runs"): {
-                "workflow_runs": [{"id": 7, "name": "CI", "status": "in_progress", "conclusion": None}]
-            },
-            ("GET", "/repos/mbologna/feeds/actions/runs/7/jobs"): {
-                "jobs": [{"name": "Deploy to GitHub Pages", "status": "completed", "conclusion": "success"}]
+            ("GET", "/repos/mbologna/feeds-config/commits/abcdef1234/check-runs"): {
+                "check_runs": [{"name": "Check feeds.toml", "status": "completed", "conclusion": "success"}]
             },
         }
         data = answers.get((request.method, path))
+        if (request.method, path) == ("GET", "/repos/mbologna/feeds-config/pulls/42"):
+            self.pr_polls += 1
+            if self.pr_polls == 1:
+                data = {"merged": False, "state": "open", "head": {"sha": "abcdef1234"}}
         if data is None:
             route.fulfill(status=404, json={"message": "Not Found"})
         else:
@@ -131,11 +133,17 @@ class GitHub:
         return next(body for m, url, body in self.requests if m == method and urlsplit(url).path.endswith(suffix))
 
 
+HEALTH_AUTH: list[str | None] = []
+
+
 def health(route) -> None:
-    """health.json from a build that ran just now, after the mocked merge."""
+    """The feeds Worker's /editor/health: health.json from a build that ran just now, after the mocked merge, with
+    each feed's subscription URL."""
+    HEALTH_AUTH.append(route.request.headers.get("authorization"))
     built = int(time.time())
     newssite = {"items": 96, "images": 95, "excerpts": 95, "ok": True, "last_ok": built - 600, "sources_failed": []}
-    route.fulfill(json={"built": built, "feeds": {}, "digests": {}, "rss": {"newssite.xml": newssite}})
+    urls = {"newssite.xml": "https://feeds.example/newssite.xml?token=t0k"}
+    route.fulfill(json={"built": built, "feeds": {}, "digests": {}, "rss": {"newssite.xml": newssite}, "urls": urls})
 
 
 def test_edit_news_sites_filters_preview_and_save(site):
@@ -156,7 +164,7 @@ def test_edit_news_sites_filters_preview_and_save(site):
         context.add_init_script("localStorage.setItem('feeds-editor-token', 'test-token')")
         context.route("https://api.github.com/**", github.answer)
         context.route("**/editor/fetch?*", fetch)
-        context.route("**/health.json", health)
+        context.route("**/editor/health", health)
         page = context.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(str(e)))
@@ -169,6 +177,7 @@ def test_edit_news_sites_filters_preview_and_save(site):
 
         page.get_by_role("button", name="News Site: articles").click()
         expect(page.locator(".feed-button[aria-current=true]")).to_contain_text("96 items")
+        expect(page.get_by_label("Subscription URL")).to_have_value("https://feeds.example/newssite.xml?token=t0k")
 
         # No relay yet: the editor says so, and editing still works.
         page.get_by_role("button", name="Fetch the sources").click()
@@ -233,9 +242,10 @@ def test_edit_news_sites_filters_preview_and_save(site):
         pull = github.sent("POST", "/pulls")
         assert pull["title"] == "chore(config): drop Bits and the Kyiv bridges from newssite.xml"
         assert pull["base"] == "main" and pull["head"] == branch["ref"].removeprefix("refs/heads/")
-        merge = github.sent("POST", "/graphql")
-        assert "mergeMethod: MERGE" in merge["query"] and merge["variables"] == {"id": "PR_node"}
-        # The token goes to the calls that need it; the public reads while polling go without.
-        assert github.auth["/repos/mbologna/feeds/pulls"] == "Bearer test-token"
-        assert github.auth["/repos/mbologna/feeds/actions/runs"] is None
+        # The config repository's workflow merges: the editor asks for no auto-merge.
+        assert not any(url.endswith("/graphql") for _, url, _ in github.requests)
+        # The repository is private: every call carries the token, and so do the Worker's endpoints.
+        assert github.auth["/repos/mbologna/feeds-config/pulls"] == "Bearer test-token"
+        assert github.auth["/repos/mbologna/feeds-config/commits/abcdef1234/check-runs"] == "Bearer test-token"
+        assert HEALTH_AUTH and set(HEALTH_AUTH) == {"Bearer test-token"}
         browser.close()
