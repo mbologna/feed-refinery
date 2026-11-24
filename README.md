@@ -16,9 +16,9 @@ Each item of an HN feed has:
 
 - the title, linking to the article (Ask HN and other text posts link to the thread);
 - the page's `og:image` (falling back to `twitter:image`), also as `media:thumbnail` for list views;
-- the site name (or the domain) and the page's description, cut to about 300 characters. A page without a description gets its first real paragraph instead (inside `<article>` or `<main>` when it has one);
+- the site name (or the domain) and the page's description, cut to about 2,000 characters. A page without a description gets its first real paragraph instead (inside `<article>` or `<main>` when it has one);
 - the submitter's own text, for Show HN and other posts that have some, quoted below the page's description (or in its place);
-- the top comment, as HN ranks it, cut to about 300 characters, with a link to it;
+- the top comment, as HN ranks it, cut to about 2,000 characters, with a link to it;
 - links to the article and the HN thread, the comment count, the points, and the story's age and author, as `150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
 - `<comments>` set to the HN thread, as in hnrss;
 - `<category>` tags with the post kind (Show HN, Ask HN, Launch HN, Tell HN) and the linked domain, for reader filters and rules.
@@ -34,7 +34,7 @@ Job posts ("Acme (YC S13) Is Hiring") are ads and never become items.
 An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categories, and the author as `dc:creator`. Its description has:
 
 - the image: the source's (an image enclosure, `media:content`, `media:thumbnail` or the first `<img>` in its description), else the article page's `og:image`, also as `media:thumbnail`;
-- the excerpt: the source's description as plain text, cut to about 300 characters, else the page's description.
+- the excerpt: the source's description as plain text, cut to about 2,000 characters, else the page's description.
 
 The item's link leads to the article, so the description doesn't repeat it: readers build their preview text from the description. An item with no excerpt gets a link to the article instead, so its description isn't empty.
 
