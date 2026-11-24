@@ -26,9 +26,10 @@ from .source import Story
 
 # 2 added the rss section; a version 1 file loads with it empty. 3 added the
 # items' hn_points and hn_checked, the previews' paywalled and the feeds'
-# filters; a version 2 file loads with them unknown.
-VERSION = 3
-READABLE = (1, 2, 3)
+# filters; a version 2 file loads with them unknown. 4 added the items' and
+# the previews' words; a version 3 file loads with them unknown.
+VERSION = 4
+READABLE = (1, 2, 3, 4)
 MAX_ATTEMPTS = 3  # preview fetches per story before giving up on it
 COMMENT_INTERVAL = 2 * 3600  # how often a listed story's top comment is looked up again
 RETRY_STATUSES = {408, 429}  # client errors worth another try; other 4xx won't change
@@ -76,6 +77,10 @@ class RssEntry:
     @property
     def image(self) -> str | None:
         return self.item.image or (self.preview.image if self.preview else None)
+
+    @property
+    def words(self) -> int | None:
+        return self.item.words or (self.preview.words if self.preview else None)
 
     @property
     def excerpt(self) -> str | None:

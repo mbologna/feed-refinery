@@ -42,11 +42,14 @@ class Item:
     categories: tuple[str, ...]
     author: str
     summary: str  # the source's description as a plain-text excerpt, paragraphs kept; empty when it has no text
-    image: str | None  # from an enclosure, media:content or media:thumbnail, or the description's first <img>
+    image: str | None  # from an enclosure, media:content, the description's first <img> or media:thumbnail
     # The description's whole plain text, for exclude_text. Only freshly parsed
     # items have it: the state doesn't store it, and two copies of a story are
     # the same item whatever their text.
     text: str = field(default="", compare=False, repr=False)
+    # The words of the source's full content (content:encoded, Atom <content>);
+    # None when it gives only a description, which says nothing of the article's length.
+    words: int | None = None
 
     @property
     def permalink(self) -> bool:
@@ -240,6 +243,8 @@ def _item(entry, base: str) -> Item | None:
     html = entry.get("summary") or ""  # feedparser fills it from <content> when the source has no summary
     prose = plain_paragraphs(html)
     text = squash(prose)[:TEXT_LIMIT]
+    content = (entry.get("content") or [{}])[0].get("value")
+    words = len((prose if content == html else plain_text(content)).split()) if content else None
     title = entry.get("title") or ""
     if entry.get("title_detail", {}).get("type") in ("text/html", "application/xhtml+xml"):
         title = plain_text(title)
@@ -260,6 +265,7 @@ def _item(entry, base: str) -> Item | None:
         summary=excerpt(prose),
         image=_image(entry, html, link or base),
         text=text,
+        words=words or None,
     )
 
 

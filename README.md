@@ -16,14 +16,16 @@ Each item of an HN feed has:
 
 - the title, linking to the article (Ask HN and other text posts link to the thread);
 - the page's `og:image` (falling back to `twitter:image`, then to the first `<img>` in its `<article>` or `<main>` that isn't declared smaller than 200 pixels), also as `media:thumbnail` for list views;
-- the site name (or the domain) and the page's excerpt: its opening paragraphs (inside `<article>` or `<main>` when it has one, from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 2,000 characters;
+- the page's excerpt: its opening paragraphs (inside `<article>` or `<main>` when it has one, from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 2,000 characters;
 - the submitter's own text, for Show HN and other posts that have some, quoted below the page's description (or in its place);
 - the top comment, as HN ranks it, cut to about 2,000 characters, with a link to it;
-- links to the article and the HN thread, the comment count, the points, and the story's age and author, as `150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
+- a last line with the article's link, labelled with its site name (or domain), its reading time, a link to the HN thread with the comment count, the points, and the story's age and author, as `Example · 8 min read · 37 comments · 150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
 - `<comments>` set to the HN thread, as in hnrss;
 - `<category>` tags with the post kind (Show HN, Ask HN, Launch HN, Tell HN) and the linked domain, for reader filters and rules.
 
 Each feed carries an icon (`<image>`), so readers show one next to its name.
+
+The reading time counts the words of the article's paragraphs at 230 a minute. It's left out under 200 words (usually a page its scripts fill in) and for a page that says it's paywalled, where only the lede is there to count.
 
 The counts are a snapshot from when the item was built. A page that blocks bots (`403`), times out or isn't HTML gets an item without the image and excerpt.
 
@@ -38,9 +40,13 @@ An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categ
 
 Excerpts, here and in HN items, keep their paragraphs. One that's too long ends with its last whole paragraph or sentence when that keeps at least half of it, else at a word, with an ellipsis.
 
-The item's link leads to the article, so the description doesn't repeat it: readers build their preview text from the description. An item with no excerpt gets a link to the article instead, so its description isn't empty.
+A last line links to the article, labelled with its site name (or domain), with its reading time and its points on HN when known. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`), else from the article page, as for HN items; a description alone says nothing of the article's length. Readers build an item's preview text from the start of its description, and the item's own link already leads to the article, so the line is left out after an excerpt of up to 500 characters when it has nothing to add. An item with no excerpt always gets it, so its description isn't empty.
 
 The article page is fetched only for an item whose source lacks the image or has only a teaser (under 500 characters of text), once per item, as for HN stories. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
+
+## Reading in NetNewsWire
+
+NetNewsWire, and Feedly when it syncs it, takes an item's body from its description and shows its first 300 characters, as plain text, in the timeline. Items start with the excerpt, so those characters are the article's opening; the site, reading time and counts come last. The image doubles as `media:content` and `media:thumbnail`, which give the timeline its thumbnail and Feedly its visual, and the article view doesn't repeat it.
 
 ## Feeds
 
@@ -57,7 +63,7 @@ A `feeds.toml` lists the feeds; [`examples/feeds.toml`](examples/feeds.toml) has
 - `site`: the website the feed is about (default `https://news.ycombinator.com/`). It is the channel's `<link>`, which Feedly takes a feed's icon from, so each feed shows its source's icon rather than one shared by every feed here.
 - `icon`: the channel's `<image>`, for readers that show it (default the site's `/favicon.ico`).
 
-Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its image, excerpt and counts:
+Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its image, the first paragraph of its excerpt (up to about 500 characters) and counts:
 
 - `file`, `title`: as for a feed.
 - `top`: stories per day (default 20).

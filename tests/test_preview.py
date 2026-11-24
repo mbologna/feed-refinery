@@ -131,6 +131,15 @@ def test_script_text_is_never_a_paragraph():
     assert parse_preview(html, "https://example.com/").description is None
 
 
+def test_words_count_the_articles_paragraphs():
+    words = len(LONG.split())
+    html = f"<body><p>{LONG} (outside)</p><article><p>{LONG}</p>" + "<p>Two more words.</p>" * 50 + "</article></body>"
+    assert parse_preview(html, "https://example.com/").words == words + 150  # every paragraph, past the excerpt's
+    html = f"<body><p>{LONG}</p><p>Short.</p><nav><p>{LONG}</p></nav></body>"
+    assert parse_preview(html, "https://example.com/").words == words + 1  # anywhere, without an article
+    assert parse_preview('<meta name="description" content="D">', "https://example.com/").words is None
+
+
 def test_a_longer_opening_beats_the_meta_description():
     html = f'<head><meta name="description" content="Meta"></head><body><article><p>{LONG}</p></article></body>'
     assert parse_preview(html, "https://example.com/").description == LONG

@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from .config import Digest, Feed, Rss
 from .preview import Preview
 from .state import Entry, RssEntry
-from .text import PARAGRAPH
+from .text import PARAGRAPH, excerpt
 
 ATOM = "http://www.w3.org/2005/Atom"
 DC = "http://purl.org/dc/elements/1.1/"
@@ -39,6 +39,12 @@ def paragraphs(text: str, lead: str = "", tail: str = "") -> str:
 
 HOT = 4 * 3600  # hackernewsbot's 🔥: at most 4 hours old
 COLD = 2 * 86400  # and its ❄️: at least 2 days old
+WORDS_PER_MINUTE = 230
+READING_MIN = 200  # words: fewer usually means a page its scripts fill in, or only the lede
+# Characters of text: more than readers show of an item in a list (NetNewsWire
+# shows 300), so a line after a longer excerpt stays out of that preview.
+PREVIEW_TEXT = 500
+DIGEST_LIMIT = 500  # characters of each story's text in a digest, a list to scan
 
 
 def ago(seconds: int) -> str:
@@ -57,15 +63,23 @@ def age_line(created: int, now: int) -> str:
     return marker + ago(elapsed)
 
 
+def reading_time(words: int | None, preview: Preview | None) -> str | None:
+    """How long the article takes to read; None when its page has too few words to tell, or says it's paywalled."""
+    if not words or words < READING_MIN or (preview and preview.paywalled):
+        return None
+    return f"{max(1, round(words / WORDS_PER_MINUTE))} min read"
+
+
 def item_html(entry: Entry, now: int) -> str:
-    """The item body: image, source, excerpt, the submitter's text, the top comment, then links, counts and age."""
+    """The item body: image, excerpt, the submitter's text, the top comment, then links, reading time, counts and age.
+
+    The body starts with the text, which readers show of an item in a list;
+    the article's link, labelled with its site, comes last.
+    """
     story, preview = entry.story, entry.preview or Preview()
     parts = []
     if preview.image:
         parts.append(f'<p><img src="{escape(preview.image)}" alt=""></p>')
-    source = preview.site_name or domain(story.url)
-    if source:
-        parts.append(f"<p><b>{escape(source)}</b></p>")
     if preview.description:
         parts.append(paragraphs(preview.description))
         if story.text:  # Show HN and the like: the page and the submitter's own words
@@ -75,7 +89,10 @@ def item_html(entry: Entry, now: int) -> str:
     if entry.comment:
         c = entry.comment
         parts.append(paragraphs(c.text, f"💬 <b>{escape(c.author)}</b>: ", f' <a href="{escape(c.url)}">→</a>'))
-    stats = [f'<a href="{escape(story.url)}">Article</a>'] if story.url else []
+    source = preview.site_name or domain(story.url) or "Article"
+    stats = [f'<a href="{escape(story.url)}">{escape(source)}</a>'] if story.url else []
+    if minutes := reading_time(preview.words, preview):
+        stats.append(minutes)
     stats.append(f'<a href="{escape(story.comments_url)}">{plural(story.comments, "comment")}</a>')
     stats.append(plural(story.points, "point"))
     age = age_line(story.created, now)
@@ -133,10 +150,10 @@ def digest_entry_html(rank: int, entry: Entry) -> str:
     parts = [f'<h3>{rank}. <a href="{escape(link)}">{escape(story.title)}</a></h3>']
     if preview.image:
         parts.append(f'<p><img src="{escape(preview.image)}" alt=""></p>')
-    text = preview.description or story.text
+    text = excerpt((preview.description or story.text).split(PARAGRAPH)[0], DIGEST_LIMIT)
     if source or text:
         lead = f"<b>{escape(source)}</b>" + (" · " if text else "") if source else ""
-        parts.append(paragraphs(text or "", lead))
+        parts.append(f"<p>{lead}{escape(text)}</p>")
     comments = plural(story.comments, "comment")
     parts.append(
         f'<p>{plural(story.points, "point")} · <a href="{escape(story.comments_url)}">{comments}</a>'
@@ -195,19 +212,28 @@ def render_feed(feed: Feed, items: list[tuple[Entry, int]], feed_url: str, now: 
 
 
 def rss_item_html(entry: RssEntry) -> str:
-    """An RSS item's body: the image (the source's, else the page's) and the excerpt (likewise).
+    """An RSS item's body: the image (the source's, else the page's), the excerpt, then the article's site and facts.
 
-    The item's <link> already leads to the article, and readers build their
-    preview text from the body, so a link to it shows only when there's no
-    excerpt: then it's all the body has.
+    The last line links to the article, labelled with its site, with its
+    reading time and its points on HN. The item's <link> already leads there,
+    and readers show the start of the body as an item's preview text, so the
+    line shows only when it adds a fact, follows an excerpt too long to fit in
+    that preview, or is all the body has.
     """
     parts = []
     if entry.image:
         parts.append(f'<p><img src="{escape(entry.image)}" alt=""></p>')
-    if entry.excerpt:
-        parts.append(paragraphs(entry.excerpt))
-    elif link := entry.item.link:
-        parts.append(f'<p><a href="{escape(link)}">{escape(domain(link) or link)}</a></p>')
+    text = entry.excerpt
+    if text:
+        parts.append(paragraphs(text))
+    facts = [reading_time(entry.words, entry.preview)]
+    if entry.hn_points:
+        facts.append(plural(entry.hn_points, "point") + " on Hacker News")
+    known = [f for f in facts if f]
+    link = entry.item.link
+    if link and (known or not text or len(text) > PREVIEW_TEXT):
+        site = (entry.preview.site_name if entry.preview else None) or domain(link) or link
+        parts.append("<p>" + " · ".join([f'<a href="{escape(link)}">{escape(site)}</a>', *known]) + "</p>")
     return "\n".join(parts)
 
 

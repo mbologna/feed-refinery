@@ -132,6 +132,19 @@ def test_parse_media_content_and_relative_images():
     assert data.categories == ("A", "B")
 
 
+def test_words_count_the_full_content_only():
+    doc = b"""<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>T</title>
+    <item><title>Full</title><link>https://s.example/1</link><description>A teaser.</description>
+      <content:encoded><![CDATA[<p>One two three.</p><p>Four five.</p>]]></content:encoded></item>
+    <item><title>Only content</title><link>https://s.example/2</link>
+      <content:encoded><![CDATA[<p>Six seven.</p>]]></content:encoded></item>
+    <item><title>Teaser</title><link>https://s.example/3</link><description>A teaser says nothing of length.</description></item>
+    </channel></rss>"""
+    full, only, teaser = parse(doc, "https://s.example/feed")
+    assert (full.words, only.words, teaser.words) == (5, 2, None)
+    assert full.summary == "A teaser."
+
+
 def test_full_size_images_come_before_the_thumbnail_and_icons_are_skipped():
     doc = b"""<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>T</title>
     <item><title>Both</title><link>https://s.example/1</link>

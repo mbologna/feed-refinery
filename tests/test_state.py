@@ -317,6 +317,7 @@ def item(n, link="", guid=None, published=NOW - HOUR, title=None, categories=(),
         author=kw.pop("author", ""),
         summary=kw.pop("summary", ""),
         image=kw.pop("image", None),
+        words=kw.pop("words", None),
     )
 
 
@@ -550,7 +551,7 @@ def test_version_1_state_loads_with_no_rss_feeds_and_keeps_the_rest():
     assert state.stories["1"].preview == Preview("https://e.example/i.png", "D", None)
     assert state.stories["1"].comment_checked == 7
     assert state.feeds == {"f.xml": {"1": 100}} and state.digests == {"d.xml": {"2026-11-18": ["1"]}}
-    assert b'"version":3' in state.to_json()
+    assert b'"version":4' in state.to_json()
 
 
 def rss_state(*entries, file="news.xml"):
@@ -662,6 +663,28 @@ def test_version_2_rss_items_load_with_hn_and_paywall_unknown():
     )
     entry = State.from_json(old).rss["r.xml"].items["https://news.example/1"]
     assert (entry.hn_points, entry.hn_checked, entry.preview.paywalled) == (None, 0, None)
+
+
+def test_version_3_items_and_previews_load_with_their_words_unknown():
+    old = (
+        b'{"version":3,"stories":{"1":{"story":{"id":"1","title":"T","url":null,"points":1,"comments":0,'
+        b'"created":0,"author":"","text":""},"preview":{"image":null,"description":"D","site_name":null,'
+        b'"paywalled":null},"attempts":0,"comment":null,"comment_checked":0}},"feeds":{},"digests":{},'
+        b'"rss":{"r.xml":{"sources":{},"items":{"https://news.example/1":{"item":{"guid":"g",'
+        b'"link":"https://news.example/1","title":"T","published":1,"categories":[],"author":"","summary":"",'
+        b'"image":null},"first_seen":5,"preview":null,"attempts":0,"from_sources":[],"hn_points":null,'
+        b'"hn_checked":0}},"filters":""}}}'
+    )
+    state = State.from_json(old)
+    assert state.stories["1"].preview.words is None
+    assert state.rss["r.xml"].items["https://news.example/1"].words is None
+
+
+def test_words_survive_a_round_trip():
+    entry = RssEntry(item(1, words=900), NOW, Preview(words=1200))
+    state = rss_state(entry)
+    loaded = State.from_json(state.to_json()).rss["news.xml"].items["https://news.example/1"]
+    assert (loaded.item.words, loaded.preview.words, loaded.words) == (900, 1200, 900)
 
 
 def test_rss_previews_fetch_every_page_when_paywalls_are_excluded():

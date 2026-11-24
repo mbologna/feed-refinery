@@ -26,6 +26,7 @@ class Preview:
     # From the page's JSON-LD isAccessibleForFree: True when it says false
     # anywhere, False when it says true, None when it says nothing.
     paywalled: bool | None = None
+    words: int | None = None  # in the article's paragraphs, for its reading time; None when it has none
 
 
 PARAGRAPH_MIN = 80  # the first paragraph kept: shorter ones are bylines, captions and the like
@@ -55,6 +56,8 @@ class _PageParser(HTMLParser):
         self.buffer: list[str] | None = None  # the open <p>'s text
         self.paragraphs: list[str] = []
         self.content_paragraphs: list[str] = []  # those inside CONTENT elements
+        self.words = 0  # in every paragraph
+        self.content_words = 0  # in those inside CONTENT elements
         self.content_image: str | None = None  # the first <img> inside CONTENT elements, as written
         self.json_ld: list[str] = []  # the text of each <script type="application/ld+json">
         self.ld_buffer: list[str] | None = None
@@ -113,8 +116,11 @@ class _PageParser(HTMLParser):
             return
         text = squash("".join(self.buffer))
         self.buffer = None
+        words = len(text.split())
+        self.words += words
         _keep(self.paragraphs, text)
         if self.content:
+            self.content_words += words
             _keep(self.content_paragraphs, text)
 
     def close(self) -> None:
@@ -180,6 +186,7 @@ def parse_preview(html: str, base_url: str) -> Preview:
         description=excerpt(description) if description else None,
         site_name=excerpt(site_name, 80) if site_name else None,
         paywalled=paywalled(parser.json_ld),
+        words=(parser.content_words if parser.content_paragraphs else parser.words) or None,
     )
 
 
