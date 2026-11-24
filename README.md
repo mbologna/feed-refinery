@@ -91,19 +91,23 @@ exclude_links = ['^https://www\.newssite\.example/(episodes|newsletter)/']
 exclude_titles = ['(?i)^le prime pagine']
 ```
 
-Several sources merged into one feed, as for Tech Site's sections, which often carry the same story:
+Several sources merged into one feed, as for Tech Site, whose feeds often carry the same story:
 
 ```toml
 [[rss]]
 file = "techsite.xml"
 title = "Tech Site"
 sources = [
+  "https://feeds.techsite.example/index",
   "https://feeds.techsite.example/features",
   "https://feeds.techsite.example/technology-lab",
   "https://feeds.techsite.example/gadgets",
   "https://feeds.techsite.example/apple",
 ]
+exclude_sections = ["Policy", "Space", "Gaming", "Cars", "Culture"]
 ```
+
+`index` lists every article, but only the newest 20, about three days' worth. It brings the AI, Science and Health sections, which have no feeds of their own; the section feeds keep older items, such as month-old Features, that `index` no longer lists. The unwanted sections are excluded by section rather than by category because articles worth keeping carry those names as tags: the Grand Theft Auto VI review is filed under Features and tagged Gaming, a piece on Tesla's autonomy plans is AI tagged Cars. `exclude_categories` would drop them; `exclude_sections` keeps them. An exclude list rather than an include list lets a section Tech Site adds later come through.
 
 `dedupe = "link+title"` would also merge stories published under different URLs.
 

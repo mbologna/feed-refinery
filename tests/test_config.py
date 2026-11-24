@@ -25,7 +25,10 @@ def test_the_repo_config_is_valid():
     assert not newssite.exclude_links[0].search("https://www.newssite.example/flashes/x/")
     assert newssite.exclude_titles[0].search("Le prime pagine di oggi")
     assert newssite.enrich and newssite.max_items == 100 and newssite.dedupe == "link"
-    assert len(tech.sources) == 4 and all(s.startswith("https://feeds.techsite.example/") for s in tech.sources)
+    assert tech.sources[0] == "https://feeds.techsite.example/index"
+    assert len(tech.sources) == 5 and all(s.startswith("https://feeds.techsite.example/") for s in tech.sources)
+    assert tech.exclude_sections == {"policy", "space", "gaming", "cars", "culture"}
+    assert not tech.exclude_categories and not tech.include_sections
     assert tech.enrich and tech.dedupe == "link"
 
 
