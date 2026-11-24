@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import calendar
+import datetime as dt
 import http.client
+import json
 import re
 import time
 import unicodedata
@@ -18,7 +20,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 import feedparser
 
 from . import USER_AGENT
-from .config import Rss
+from .config import JsonFields, Rss
 from .text import excerpt, plain_text, squash
 
 TIMEOUT = 30
@@ -58,8 +60,12 @@ class Fetched(NamedTuple):
     last_modified: str | None
 
 
-def fetch(source: str, etag: str | None = None, last_modified: str | None = None) -> Fetched:
+def fetch(
+    source: str, etag: str | None = None, last_modified: str | None = None, fields: JsonFields | None = None
+) -> Fetched:
     """The source's items, with a conditional GET. Raises on HTTP and network errors and on a document that isn't a feed.
+
+    With fields the source is a JSON document, read with parse_json.
 
     A network error (not an HTTP status) is retried once.
     """
@@ -85,7 +91,8 @@ def fetch(source: str, etag: str | None = None, last_modified: str | None = None
             if attempt == 2:
                 raise
             time.sleep(RETRY_DELAY)
-    return Fetched(200, parse(body, base, content_type), new_etag, new_modified)
+    items = parse_json(body, base, fields) if fields else parse(body, base, content_type)
+    return Fetched(200, items, new_etag, new_modified)
 
 
 def parse(body: bytes, base: str, content_type: str = "") -> list[Item]:
@@ -100,6 +107,79 @@ def parse(body: bytes, base: str, content_type: str = "") -> list[Item]:
         item = _item(entry, base)
         if item:
             items.append(item)
+    return items
+
+
+def _at(data: object, path: str) -> object:
+    """The value at a dotted path ("data.posts", "media.0.url"), or None when any step is missing."""
+    for step in path.split("."):
+        if isinstance(data, dict):
+            data = data.get(step)
+        elif isinstance(data, list) and step.isdigit() and int(step) < len(data):
+            data = data[int(step)]
+        else:
+            return None
+    return data
+
+
+def _json_date(value: object, fmt: str | None) -> int | None:
+    """Unix time from a JSON date: a strptime pattern's string, else ISO 8601, or Unix seconds (milliseconds when
+    larger than any second count of this century). A time without a zone is UTC; a date alone is its midnight."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return int(value / 1000 if value > 10**11 else value)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        moment = dt.datetime.strptime(value.strip(), fmt) if fmt else dt.datetime.fromisoformat(value.strip())
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=dt.UTC)
+    return int(moment.timestamp())
+
+
+def parse_json(body: bytes, base: str, fields: JsonFields) -> list[Item]:
+    """The items of a JSON document, as fields maps them, in the document's order.
+
+    An item without a title or a link is skipped. Raises ValueError when the
+    body isn't JSON or fields.items isn't a list, so the source keeps the
+    items it had, as for a broken RSS feed.
+    """
+    try:
+        data = json.loads(body)
+    except ValueError as e:
+        raise ValueError(f"not JSON: {e}") from e
+    entries = _at(data, fields.items)
+    if not isinstance(entries, list):
+        raise ValueError(f"not a list at {fields.items!r}")
+    items = []
+    for entry in entries:
+        title = _at(entry, fields.title)
+        link = _at(entry, fields.link)
+        if not isinstance(title, str) or not isinstance(link, str) or not (link := _web(link, base) or ""):
+            continue
+        title = squash(plain_text(title))
+        if not title:
+            continue
+        html = _at(entry, fields.summary) if fields.summary else None
+        text = plain_text(html)[:TEXT_LIMIT] if isinstance(html, str) else ""
+        author = _at(entry, fields.author) if fields.author else None
+        image = _at(entry, fields.image) if fields.image else None
+        items.append(
+            Item(
+                guid=link,
+                link=link,
+                title=title,
+                published=_json_date(_at(entry, fields.date), fields.date_format) if fields.date else None,
+                categories=(),
+                author=squash(author) if isinstance(author, str) else "",
+                summary=excerpt(text) if text else "",
+                image=_web(image, link) if isinstance(image, str) else None,
+                text=text,
+            )
+        )
     return items
 
 

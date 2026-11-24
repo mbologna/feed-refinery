@@ -1,3 +1,4 @@
+import json
 import re
 import urllib.error
 from dataclasses import replace
@@ -6,8 +7,21 @@ from pathlib import Path
 import pytest
 
 from feeds import USER_AGENT, rss
-from feeds.config import Rss
-from feeds.rss import Drop, Fetched, Item, canonical_link, dedup_key, fetch, keep, normal_title, parse, select, verdict
+from feeds.config import JsonFields, Rss
+from feeds.rss import (
+    Drop,
+    Fetched,
+    Item,
+    canonical_link,
+    dedup_key,
+    fetch,
+    keep,
+    normal_title,
+    parse,
+    parse_json,
+    select,
+    verdict,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NEWS_SAMPLE = (FIXTURES / "newssite.xml").read_bytes()
@@ -459,3 +473,96 @@ def test_exclude_text_judges_items_without_text_on_their_title():
     # Items from state.json carry no text: they passed exclude_text with it when first seen.
     assert keep(item(title="A study of digital sovereignty"), SPONSORED)
     assert not keep(item(title="A study sponsored by Acme"), SPONSORED)
+
+
+BLOG_API = "https://blog.example/api/posts?language=en"
+FIELDS = JsonFields(
+    items="data.results",
+    title="title",
+    link="url",
+    date="date",
+    date_format="%B %d, %Y",
+    summary="excerpt",
+    author="author.name",
+    image="media.0.src",
+)
+
+
+def blog(*posts):
+    return json.dumps({"data": {"results": list(posts)}}).encode()
+
+
+def test_parse_json_maps_the_fields():
+    (post,) = parse_json(
+        blog(
+            {
+                "title": "SLES 16.1 <b>is here</b>",
+                "url": "/blog/sles-16-1/",
+                "date": "November 10, 2026",
+                "excerpt": "<p>More choice</p> for the enterprise",
+                "author": {"name": " Ada  Lovelace "},
+                "media": [{"src": "/img/a.png"}],
+            }
+        ),
+        BLOG_API,
+        FIELDS,
+    )
+    assert post.title == "SLES 16.1 is here"
+    assert post.link == post.guid == "https://blog.example/blog/sles-16-1/"
+    assert post.published == 1_794_268_800  # 2026-11-10 00:00 UTC
+    assert post.summary == post.text == "More choice for the enterprise"
+    assert post.author == "Ada Lovelace" and post.image == "https://blog.example/img/a.png"
+    assert post.categories == ()
+
+
+@pytest.mark.parametrize(
+    ("value", "fmt", "expected"),
+    [
+        ("2026-11-10T08:30:00+01:00", None, 1_794_295_800),  # 07:30 UTC
+        ("2026-11-10", None, 1_794_268_800),
+        (1_794_268_800, None, 1_794_268_800),
+        (1_794_268_800_000, None, 1_794_268_800),  # milliseconds
+        ("10/11/2026", "%d/%m/%Y", 1_794_268_800),
+        ("tomorrow", None, None),
+        ("November 10, 2026", "%d/%m/%Y", None),
+        (True, None, None),
+        (None, None, None),
+    ],
+)
+def test_json_dates(value, fmt, expected):
+    fields = JsonFields(items="data.results", title="t", link="u", date="d", date_format=fmt)
+    (post,) = parse_json(blog({"t": "T", "u": "https://blog.example/1", "d": value}), BLOG_API, fields)
+    assert post.published == expected
+
+
+def test_parse_json_skips_items_without_a_title_or_a_link():
+    posts = [
+        {"title": "No link"},
+        {"url": "https://blog.example/no-title"},
+        {"title": "  ", "url": "https://blog.example/blank"},
+        {"title": "Bad link", "url": "javascript:alert(1)"},
+        {"title": 3, "url": "https://blog.example/number"},
+        "not an object",
+        {"title": "Kept", "url": "https://blog.example/kept"},
+    ]
+    minimal = JsonFields(items="data.results", title="title", link="url")
+    assert [p.title for p in parse_json(blog(*posts), BLOG_API, minimal)] == ["Kept"]
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (b"<html>", "not JSON"),
+        (b'{"data": {"results": {"a": 1}}}', "not a list at 'data.results'"),
+        (b"[]", "not a list"),
+    ],
+)
+def test_parse_json_rejects_what_isnt_a_list_of_items(body, message):
+    with pytest.raises(ValueError, match=message):
+        parse_json(body, BLOG_API, FIELDS)
+
+
+def test_fetch_reads_a_json_source(web):
+    web.json(BLOG_API, {"data": {"results": [{"title": "T", "url": "/t"}]}})
+    fetched = fetch(BLOG_API, fields=JsonFields(items="data.results", title="title", link="url"))
+    assert [i.link for i in fetched.items] == ["https://blog.example/t"]

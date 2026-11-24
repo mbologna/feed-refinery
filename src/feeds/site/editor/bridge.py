@@ -86,6 +86,11 @@ def _value(value: Any, old: Item | None = None) -> Item:
     entry per line when the old array was so or one line would be too long, indented like the old one."""
     if isinstance(value, str):
         return _string(value)
+    if isinstance(value, dict):  # json = { items = "…", … }, on one line as the file writes it
+        table = tomlkit.inline_table()
+        for key, entry in value.items():
+            table.append(key, _value(entry))
+        return table
     if not isinstance(value, list):
         return tomlkit.item(value)
     before = old if isinstance(old, Array) else []
@@ -244,7 +249,11 @@ def preview(table: dict[str, Any], bodies: dict[str, dict[str, Any]], now: int |
             sources[url] = {"items": 0, "error": got["error"]}
             continue
         try:
-            found = rss.parse(got["body"], got.get("url") or url, got.get("content_type") or "")
+            base = got.get("url") or url
+            if feed.json:
+                found = rss.parse_json(got["body"], base, feed.json)
+            else:
+                found = rss.parse(got["body"], base, got.get("content_type") or "")
         except ValueError as e:
             sources[url] = {"items": 0, "error": str(e)}
             continue

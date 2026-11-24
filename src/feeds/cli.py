@@ -29,7 +29,7 @@ def fetch_rss(feeds: list[config.Rss], current: state.State) -> dict[str, dict[s
 
     A source two feeds share is fetched once per validator pair.
     """
-    shared: dict[tuple[str, str | None, str | None], rss.Fetched | Exception] = {}
+    shared: dict[tuple[str, str | None, str | None, config.JsonFields | None], rss.Fetched | Exception] = {}
     results: dict[str, dict[str, rss.Fetched | Exception]] = {}
     for feed in feeds:
         known = current.rss.get(feed.file) or state.RssFeed()
@@ -39,10 +39,10 @@ def fetch_rss(feeds: list[config.Rss], current: state.State) -> dict[str, dict[s
         for url in feed.sources:
             source_state = known.sources.get(url) or state.Source()
             etag, modified = (None, None) if changed else (source_state.etag, source_state.last_modified)
-            key = (url, etag, modified)
+            key = (url, etag, modified, feed.json)
             if key not in shared:
                 try:
-                    shared[key] = rss.fetch(url, etag, modified)
+                    shared[key] = rss.fetch(url, etag, modified, feed.json)
                 # Any error: the source keeps the items it had while the others refresh.
                 except Exception as e:
                     shared[key] = e

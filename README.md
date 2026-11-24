@@ -73,6 +73,7 @@ Each `[[rss]]` table publishes items from other feeds:
 
 - `file`, `title`: as for an HN feed.
 - `source`: the URL of an RSS or Atom feed; or `sources`, a list of them, merged into one feed. A table has one or the other.
+- `json`: for a site with no feed, whose page loads its posts from a JSON API: the sources are JSON documents, and this inline table says where the items are. `items` is the dotted path to the list (`"results"`, `"data.posts"`); `title` and `link`, and optionally `date`, `summary`, `author` and `image`, are paths within each item. `date_format` is a [strptime pattern](https://docs.python.org/3/library/datetime.html#format-codes) for the date; without one, ISO 8601 or Unix seconds. Links resolve against the source's URL, a date without a time is its midnight UTC, and an item without a title or a link is skipped. Filters, merging and enrichment work as for RSS.
 - `include_categories`, `exclude_categories`: categories, matched against the whole category, ignoring case.
 - `include_sections`, `exclude_sections`: sections, matched like categories but only against the item's first category, for sites that list the section first and then free-form tags reusing section names. Check the site first: Tech Site lists categories alphabetically, so there the section is in the URL and `exclude_links` is the filter to use.
 - `include_titles`, `exclude_titles`, `include_links`, `exclude_links`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax), each searched anywhere in the item's title or link. Start one with `(?i)` to ignore case.
@@ -255,6 +256,7 @@ For filtering other feeds:
 - [Miniflux](https://miniflux.app/) filters but can't republish a feed.
 - [Feedly](https://feedly.com/)'s mute filters need a Pro+ plan and match keywords only, not categories or links.
 - None of them hides the items of one feed that another already carried (Links stories HN had), or reads a page's paywall marker.
+- For a site with no feed, RSS-Bridge needs a bridge written for that site and a server to run it; the JSON API the site's own page reads needs only a field map.
 
 Actions and Pages cost nothing for a public repository, and the HN feeds already had the preview fetching and the state that RSS items need. Checked 2026-11-24.
 

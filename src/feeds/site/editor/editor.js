@@ -68,6 +68,15 @@ const FIELDS = {
     FILE,
     TITLE,
     { key: "sources", label: "Sources", type: "sources" },
+    {
+      key: "json",
+      label: "JSON source",
+      type: "mapping",
+      keys: ["items", "title", "link", "date", "date_format", "summary", "author", "image"],
+      help:
+        "Only for sources that are JSON, not RSS or Atom: the dotted path to the list of items, then each item's " +
+        "fields. items, title and link are required; date_format is a strptime pattern such as %B %d, %Y.",
+    },
     ...Object.keys(LISTS).map((key) => ({ key, type: "list" })),
     {
       key: "enrich",
@@ -570,7 +579,39 @@ function renderField(kind, entry, field) {
     );
   }
   if (field.type === "sources") return renderSources(entry);
+  if (field.type === "mapping") return renderMapping(kind, entry, field);
   return renderChips(kind, entry, field.key);
+}
+
+function renderMapping(kind, entry, field) {
+  const values = entry.data[field.key] ?? {};
+  const update = (key, text) => {
+    const next = { ...(entry.data[field.key] ?? {}) };
+    if (text.trim()) next[key] = text.trim();
+    else delete next[key];
+    set(kind, entry, field.key, Object.keys(next).length ? next : null);
+  };
+  return el(
+    "fieldset",
+    { class: "field" },
+    el("legend", {}, field.label),
+    el("small", {}, field.help),
+    field.keys.map((key) => {
+      const id = fieldId(`${field.key}-${key}`);
+      return el(
+        "div",
+        { class: "field" },
+        el("label", { for: id }, key),
+        el("input", {
+          id,
+          type: "text",
+          class: "mono",
+          value: values[key] ?? "",
+          oninput: (e) => update(key, e.target.value),
+        }),
+      );
+    }),
+  );
 }
 
 function renderSources(entry) {
