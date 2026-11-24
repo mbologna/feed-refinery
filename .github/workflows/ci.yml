@@ -1,8 +1,9 @@
 name: CI
 
-# Tests on every push and pull request. On main (a push or a dispatch) the
-# build then fetches the stories and their previews, and publishes the feeds on
-# GitHub Pages.
+# Tests on every push and pull request, with a check of feeds.toml and a
+# browser test of the web editor. On main (a push or a dispatch) the build then
+# fetches the stories and their previews, and publishes the feeds and the
+# editor on GitHub Pages.
 #
 # Every 30 minutes a Cloudflare Worker's Cron Trigger (configured in a
 # private repository) dispatches this workflow with build_only: GitHub's
@@ -46,6 +47,52 @@ jobs:
       enable_codecov: false
     secrets: inherit
 
+  # The build's own validation of feeds.toml, which the editor's pull
+  # requests change.
+  config:
+    name: Check feeds.toml
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.build_only) }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.8"
+          python-version: "3.15"
+
+      - name: Check feeds.toml
+        run: uv run --locked --no-dev feeds check-config feeds.toml
+
+  # The web editor in Chromium: Pyodide from jsDelivr and the packages from
+  # PyPI, the wheel built here, GitHub and the source relay mocked. The
+  # python job skips this test: it needs the editor dependency group.
+  editor:
+    name: Editor
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.build_only) }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.8"
+          python-version: "3.15"
+
+      - name: Install Chromium
+        run: uv run --locked --group editor playwright install --with-deps chromium
+
+      - name: Test the editor in a browser
+        run: uv run --locked --group editor pytest tests/test_editor_browser.py
+
   # Monday's run tags the next version and publishes a GitHub Release with
   # the changes as its notes; nothing builds on tags, Pages deploys from main.
   auto-release:
@@ -86,6 +133,17 @@ jobs:
 
       - name: Build
         run: uv run --locked --no-dev feeds build --output-dir public
+
+      # The web editor at /editor/: its files, the feeds wheel it runs in
+      # the browser, and the locked versions of the packages that wheel
+      # needs from PyPI. tests/test_editor_browser.py assembles it the same way.
+      - name: Add the editor
+        run: |
+          set -euo pipefail
+          cp -R src/feeds/site/editor public/editor
+          uv build --wheel --out-dir dist
+          cp dist/feeds-*.whl public/editor/feeds.whl
+          uv export --frozen --only-group pyodide --no-hashes --no-annotate --no-header > public/editor/requirements.txt
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

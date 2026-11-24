@@ -9,7 +9,8 @@ import time
 import unicodedata
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from html.parser import HTMLParser
 from typing import NamedTuple
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
@@ -162,8 +163,15 @@ def _item(entry, base: str) -> Item | None:
     )
 
 
-def keep(item: Item, feed: Rss) -> bool:
-    """Whether the item passes the feed's filters.
+class Drop(NamedTuple):
+    """The filter that drops an item: the config key, and for an exclude the entry that matched."""
+
+    key: str
+    entry: str | None = None  # None for an include: the item matched none of the list
+
+
+def verdict(item: Item, feed: Rss) -> Drop | None:
+    """The filter that drops the item, or None when it passes them all.
 
     The includes come first: an item must match every include list the feed
     sets (any entry of each). The excludes then drop whatever matches any
@@ -171,26 +179,33 @@ def keep(item: Item, feed: Rss) -> bool:
     section on most WordPress sites, whose other categories and free-form
     tags may reuse section names.
     """
-    categories = {c.casefold() for c in item.categories}
-    section = item.categories[0].casefold() if item.categories else None
+    categories = [c.casefold() for c in item.categories]
+    section = categories[0] if categories else None
     link = item.link or ""
-    if feed.include_categories and not categories & feed.include_categories:
-        return False
+    if feed.include_categories and not feed.include_categories.intersection(categories):
+        return Drop("include_categories")
     if feed.include_sections and section not in feed.include_sections:
-        return False
+        return Drop("include_sections")
     if feed.include_titles and not any(p.search(item.title) for p in feed.include_titles):
-        return False
+        return Drop("include_titles")
     if feed.include_links and not any(p.search(link) for p in feed.include_links):
-        return False
-    if categories & feed.exclude_categories:
-        return False
+        return Drop("include_links")
+    if found := next((c for c in categories if c in feed.exclude_categories), None):
+        return Drop("exclude_categories", found)
     if section in feed.exclude_sections:
-        return False
-    if any(p.search(item.title) for p in feed.exclude_titles):
-        return False
-    if any(p.search(link) for p in feed.exclude_links):
-        return False
-    return item.author.casefold() not in feed.exclude_authors
+        return Drop("exclude_sections", section)
+    if pattern := next((p for p in feed.exclude_titles if p.search(item.title)), None):
+        return Drop("exclude_titles", pattern.pattern)
+    if pattern := next((p for p in feed.exclude_links if p.search(link)), None):
+        return Drop("exclude_links", pattern.pattern)
+    if item.author.casefold() in feed.exclude_authors:
+        return Drop("exclude_authors", item.author.casefold())
+    return None
+
+
+def keep(item: Item, feed: Rss) -> bool:
+    """Whether the item passes the feed's filters (see verdict)."""
+    return verdict(item, feed) is None
 
 
 def _tracking(param: str) -> bool:
@@ -217,3 +232,107 @@ def normal_title(title: str) -> str:
 def dedup_key(item: Item) -> str:
     """Where the state keeps an item: its canonical link, or its guid when it has no link."""
     return canonical_link(item.link) if item.link else "guid:" + item.guid
+
+
+@dataclass(frozen=True)
+class Choice:
+    """What became of one item a source listed."""
+
+    source: str
+    item: Item
+    drop: Drop | None  # the filter that dropped it; None when it passed
+    key: str | None = None  # the story it belongs to, when it passed
+    merged: bool = False  # True when it joined a story an earlier copy (or the state) already held
+
+
+@dataclass
+class Selection:
+    """The stories a feed's sources list, after filtering and merging copies."""
+
+    items: dict[str, Item] = field(default_factory=dict)  # dedup key -> the story's kept copy, every copy's categories
+    origin: dict[str, str] = field(default_factory=dict)  # key -> the key it had in known, for a story known before
+    moved: set[str] = field(default_factory=set)  # keys of stories whose link changed: their preview no longer applies
+    sources: dict[str, list[str]] = field(default_factory=dict)  # key -> the sources listing a copy, in config order
+    choices: list[Choice] = field(default_factory=list)  # every listed item, in the sources' order
+
+
+def select(
+    feed: Rss, listed: Sequence[tuple[str, Sequence[Item]]], known: Mapping[str, Item] | None = None
+) -> Selection:
+    """Filter the sources' items and merge the copies of each story into what known already holds.
+
+    listed pairs each source that answered with its items, in the config's
+    order; known maps dedup keys to the stories already held, oldest first.
+    Two items are one story when their canonical links or their guids match,
+    or, with dedupe = "link+title", their normalised titles. A known story
+    keeps its copy; among new ones the earliest published wins, then the
+    source and position order. Every copy adds its categories.
+    """
+    result = Selection(items=dict(known or {}), origin={k: k for k in known or {}})
+    items = result.items
+    order = {url: n for n, url in enumerate(feed.sources)}
+    by_link = {canonical_link(i.link): k for k, i in items.items() if i.link}
+    by_guid = {i.guid: k for k, i in items.items()}
+    by_title: dict[str, str] = {}
+    titles = feed.dedupe == "link+title"
+    if titles:
+        by_title = {t: k for k, i in items.items() if (t := normal_title(i.title))}
+    choices = [Choice(url, item, verdict(item, feed)) for url, found in listed for item in found]
+    candidates = [(n, c) for n, c in enumerate(choices) if c.drop is None]
+    candidates.sort(
+        key=lambda nc: (nc[1].item.published is None, nc[1].item.published or 0, order[nc[1].source], nc[0])
+    )
+
+    def rekey(old: str, new: str) -> None:
+        items[new] = items.pop(old)
+        for index in (by_link, by_guid, by_title):
+            index.update({k: new for k, v in index.items() if v == old})
+        if old in result.origin:
+            result.origin[new] = result.origin.pop(old)
+        if old in result.sources:
+            result.sources[new] = result.sources.pop(old)
+        if old in result.moved:
+            result.moved.remove(old)
+            result.moved.add(new)
+        for m, earlier in enumerate(choices):
+            if earlier.key == old:
+                choices[m] = replace(earlier, key=new)
+
+    for n, choice in candidates:
+        item, url = choice.item, choice.source
+        link = canonical_link(item.link) if item.link else None
+        title = normal_title(item.title) if titles else ""
+        key = (
+            (by_link.get(link) if link else None)
+            or by_guid.get(item.guid)
+            or (by_title.get(title) if title else None)
+            or (dedup_key(item) if dedup_key(item) in items else None)
+        )
+        merged = key is not None
+        if key is None:
+            key = dedup_key(item)
+            items[key] = item
+        else:
+            kept = items[key]
+            categories = kept.categories + tuple(c for c in item.categories if c not in kept.categories)
+            if item.guid == kept.guid:  # the same item again, perhaps edited
+                items[key] = replace(item, categories=categories)
+                if item.link != kept.link:  # its preview no longer applies, and its key follows the link
+                    if dedup_key(item) not in items:
+                        rekey(key, dedup_key(item))
+                        key = dedup_key(item)
+                    result.moved.add(key)
+            else:
+                items[key] = replace(kept, categories=categories)
+        sources = result.sources.setdefault(key, [])
+        if url not in sources:
+            sources.append(url)
+            sources.sort(key=order.__getitem__)
+        choices[n] = replace(choice, key=key, merged=merged)
+        if link:
+            by_link.setdefault(link, key)
+        by_guid.setdefault(item.guid, key)
+        if title:
+            by_title.setdefault(title, key)
+    result.choices = choices
+    return result

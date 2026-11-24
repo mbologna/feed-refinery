@@ -28,6 +28,17 @@ dev = [
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
     "ruff>=0.17.0",
+    { include-group = "pyodide" },
+]
+# What the web editor installs in the browser, next to the feeds wheel: CI
+# publishes these locked versions as editor/requirements.txt.
+pyodide = [
+    "feedparser>=6.0.14",
+    "tomlkit>=0.15.2",
+]
+# The editor's browser test (tests/test_editor_browser.py).
+editor = [
+    "playwright>=1.65.2",
 ]
 
 [tool.uv]

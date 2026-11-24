@@ -128,9 +128,32 @@ The copy the feed first saw stays, so its guid holds across builds. Among copies
 
 A push to `main` republishes the feeds. An unknown key, a wrong type, a regular expression that doesn't compile or a duplicate `file` fails the build.
 
+## Editor
+
+<https://feeds.michelebologna.net/editor/> edits `feeds.toml` in the browser: every `[[feed]]`, `[[digest]]` and `[[rss]]` table, with each feed's item count, images and last good fetch from `health.json`. You can add, duplicate, delete and rename feeds, and change any key. The editor checks every change with the build's own code and messages, so a regular expression that doesn't compile or a duplicate `file` is refused before anything is saved.
+
+For an `[[rss]]` table it previews the filters on the live sources: each item with the rule that drops it or the story it merges into, the counts before and after the change, and the sections and categories with their counts. Clicking a section or category adds it to `exclude_sections` or `exclude_categories`. A Hacker News table shows the items published now.
+
+**Sign in** with a [fine-grained token](https://github.com/settings/personal-access-tokens/new) limited to the repository `mbologna/feeds`, with these permissions:
+
+- Contents: read and write;
+- Pull requests: read and write.
+
+The token stays in the browser's local storage for `feeds.michelebologna.net`; **Sign out** removes it.
+
+**Saving** shows the diff of `feeds.toml` and a commit message, `chore(config): …`, which you can edit; its first line must fit in 72 characters. The editor then:
+
+1. creates a branch `editor/…` from the commit it loaded, commits `feeds.toml` to it and opens a pull request;
+2. turns on auto-merge with a merge commit, so GitHub merges the pull request once the required checks pass (it needs "Allow auto-merge" in the repository settings);
+3. follows the pull request to the merge, the Pages deploy and the first build after the merge, about 2 to 3 minutes. The site's cache can add up to 10 minutes before the change shows.
+
+The preview fetches the sources through `GET /editor/fetch?url=<source>` on the same host, with the token as `Authorization: Bearer <token>`: most feeds don't allow a browser to fetch them from another site. The feeds Worker serves that route and checks that the token can push to this repository. Without the route the editor says "Preview relay unavailable", and editing and saving still work. The Worker also sends a Content-Security-Policy for `/editor/*`; the browser test runs the editor under the same policy (`CSP` in `tests/test_editor_browser.py`).
+
+The same Python code as the build runs in the browser: [Pyodide](https://pyodide.org/), pinned and loaded from jsDelivr with Subresource Integrity hashes, runs in a Web Worker the feeds wheel and the locked versions of feedparser and tomlkit (`uv.lock`'s `pyodide` group), which CI publishes next to the editor as `feeds.whl` and `requirements.txt`. `src/feeds/site/editor/bridge.py` loads, edits and previews: it edits with [tomlkit](https://github.com/python-poetry/tomlkit), which keeps the file's comments and layout, and filters and merges with `rss.select`, the function the build uses.
+
 ## How it's published
 
-The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pull request. On `main` it then builds the feeds and deploys them to GitHub Pages:
+The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pull request, checks `feeds.toml` with `feeds check-config`, and tests the editor in Chromium. On `main` it then builds the feeds and deploys them to GitHub Pages, with the editor:
 
 - on every push;
 - every 30 minutes (at :07 and :37), dispatched by a Cron Trigger on the Worker that serves the feeds: GitHub's own schedule ran hours late, or not at all. Those runs skip the tests;
@@ -179,7 +202,7 @@ Serve the folder with any static web server, such as nginx, Caddy or `python3 -m
 7,37 * * * *  cd /srv/feeds && uvx --from git+https://github.com/mbologna/feeds feeds build --output-dir /var/www/feeds --page-url https://feeds.example.com/ --previous-state /var/www/feeds/state.json
 ```
 
-Give cron the full path to `uvx` if its `PATH` does not include it. `feeds check --page-url https://feeds.example.com/`, run from the same directory, exits with status 1 when a configured feed is missing or was built more than 3 hours ago (`--max-age-hours`).
+Give cron the full path to `uvx` if its `PATH` does not include it. `feeds check --page-url https://feeds.example.com/`, run from the same directory, exits with status 1 when a configured feed is missing or was built more than 3 hours ago (`--max-age-hours`). `feeds check-config feeds.toml` exits with status 2 and the build's message when the file wouldn't build.
 
 ## Development
 
@@ -193,9 +216,18 @@ uv run feeds build --output-dir public --previous-state ''
 
 # Check the published feeds' age
 uv run feeds check --max-age-hours 3
+
+# Check feeds.toml
+uv run feeds check-config feeds.toml
+
+# The editor's browser test: Chromium, Pyodide from jsDelivr, packages from PyPI
+uv run --group editor playwright install chromium
+uv run --group editor pytest tests/test_editor_browser.py
 ```
 
-The tests never touch the network: they swap `urlopen` for a table of canned responses. The RSS fixtures under `tests/fixtures/` are cut from News Site's live feed, plus items modelled on Tech Site's, an Atom sample and a page that isn't a feed.
+`uv run pytest` skips the browser test unless the `editor` dependency group is installed.
+
+The tests never touch the network, apart from the editor's browser test: they swap `urlopen` for a table of canned responses. The RSS fixtures under `tests/fixtures/` are cut from News Site's live feed, plus items modelled on Tech Site's, an Atom sample and a page that isn't a feed. `tests/fixtures/feeds.toml` is a copy of `feeds.toml` for the editor's tests; the tests check only that the real file builds, since the editor changes it.
 
 Dependencies resolve only to releases at least 7 days old (`exclude-newer` in `pyproject.toml`). The script itself needs only feedparser and the standard library.
 

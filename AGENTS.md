@@ -9,13 +9,20 @@ Notes for coding agents working in this repository. [README.md](README.md) cover
 - Hacker News: `[[feed]]` and `[[digest]]` tables; `source.py` asks the Algolia and Firebase APIs, `comments.py` finds the top comment.
 - Other RSS or Atom feeds: `[[rss]]` tables; `rss.py` fetches (conditional GET), parses with feedparser, filters and computes the dedup keys.
 
-`config.py` validates every table. `state.py` merges each run's results into `state.json`, which travels with the published site, and fetches previews (`preview.py`) with one set of retry rules for both kinds. `feed.py` renders the documents, `page.py` the index, `cli.py` runs a build and writes `health.json`.
+`config.py` validates every table. `rss.select` filters a feed's items (`rss.verdict` names the rule that drops one) and merges the copies of each story; `state.py` merges each run's results into `state.json`, which travels with the published site, and fetches previews (`preview.py`) with one set of retry rules for both kinds. `feed.py` renders the documents, `page.py` the index, `cli.py` runs a build and writes `health.json`.
+
+The web editor lives in `src/feeds/site/editor/`: plain HTML, CSS and JavaScript, no build step. `worker.js` runs Pyodide with the feeds wheel and `bridge.py`, which validates with `config.parse`, edits with tomlkit and previews with `rss.parse` and `rss.select`, so the browser runs the build's code. CI publishes the folder at `/editor/` with the wheel and `requirements.txt`; `feeds build` copies only the files directly in `site/`.
 
 ## Constraints
 
 - `state.json` is versioned (`VERSION` in `state.py`). A change to its shape bumps the version and keeps `from_json` reading the older versions, so a deploy never drops the published state.
 - Tests never touch the network: `tests/conftest.py` swaps `urlopen` for canned responses. RSS fixtures live in `tests/fixtures/`.
 - Coverage must stay at or above `fail_under` in `pyproject.toml`.
+- No test may depend on what `feeds.toml` holds, only on its building: the editor's pull requests change it and merge themselves when CI passes. Tests use `tests/fixtures/feeds.toml`.
+- The browser test (`tests/test_editor_browser.py`) needs the `editor` dependency group and the network; the python job skips it, the `editor` CI job runs it.
+- The Pyodide version and its Subresource Integrity hashes are pinned in `worker.js`; a new version means new hashes for every file listed there.
+- The editor's HTML, CSS and JavaScript are formatted with `npx prettier --print-width 120`.
+- The feeds Worker serves `/editor/fetch` and sends the editor's Content-Security-Policy; `CSP` in the browser test is a copy of it. An editor change that needs another origin, or inline code, changes both.
 - The repository is public: test data and examples use public sites only.
 
 ## Versioning
