@@ -293,11 +293,15 @@ def test_rss_items_drop_categories_that_differ_only_in_case():
 
 
 def test_rss_item_html():
+    # No link to the article: the item's <link> is one, and readers would show it in the preview text.
     assert rss_item_html(RssEntry(rss_item(summary="Uno <b>due</b> & tre"), 0)) == (
         '<p><img src="https://static.example/chiara.png?w=680&amp;h=453" alt=""></p>\n'
-        "<p>Uno &lt;b&gt;due&lt;/b&gt; &amp; tre</p>\n"
-        f'<p><a href="{LINK}">newssite.example</a></p>'
+        "<p>Uno &lt;b&gt;due&lt;/b&gt; &amp; tre</p>"
     )
+
+
+def test_rss_item_without_text_links_to_the_article():
+    assert rss_item_html(RssEntry(rss_item(summary="", image=None), 0)) == f'<p><a href="{LINK}">newssite.example</a></p>'
 
 
 def test_rss_items_fall_back_on_the_preview():

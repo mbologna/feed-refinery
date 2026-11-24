@@ -186,14 +186,18 @@ def render_feed(feed: Feed, items: list[tuple[Entry, int]], feed_url: str, now: 
 
 
 def rss_item_html(entry: RssEntry) -> str:
-    """An RSS item's body: the image (the source's, else the page's), the excerpt (likewise), then the link."""
+    """An RSS item's body: the image (the source's, else the page's) and the excerpt (likewise).
+
+    The item's <link> already leads to the article, and readers build their
+    preview text from the body, so a link to it shows only when there's no
+    excerpt: then it's all the body has.
+    """
     parts = []
     if entry.image:
         parts.append(f'<p><img src="{escape(entry.image)}" alt=""></p>')
     if entry.excerpt:
         parts.append(f"<p>{escape(entry.excerpt)}</p>")
-    link = entry.item.link
-    if link:
+    elif link := entry.item.link:
         parts.append(f'<p><a href="{escape(link)}">{escape(domain(link) or link)}</a></p>')
     return "\n".join(parts)
 

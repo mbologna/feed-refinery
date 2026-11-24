@@ -34,8 +34,9 @@ Job posts ("Acme (YC S13) Is Hiring") are ads and never become items.
 An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categories, and the author as `dc:creator`. Its description has:
 
 - the image: the source's (an image enclosure, `media:content`, `media:thumbnail` or the first `<img>` in its description), else the article page's `og:image`, also as `media:thumbnail`;
-- the excerpt: the source's description as plain text, cut to about 300 characters, else the page's description;
-- a link to the article.
+- the excerpt: the source's description as plain text, cut to about 300 characters, else the page's description.
+
+The item's link leads to the article, so the description doesn't repeat it: readers build their preview text from the description. An item with no excerpt gets a link to the article instead, so its description isn't empty.
 
 The article page is fetched only for an item whose source lacks the image or the excerpt, once per item, as for HN stories. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
 
