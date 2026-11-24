@@ -8,6 +8,7 @@ import re
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit
 
 from . import STATE_NAME
 
@@ -18,11 +19,37 @@ class ConfigError(ValueError):
     pass
 
 
+HN_SITE = "https://news.ycombinator.com/"
+
+
+def _origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}/"
+
+
+class _Site:
+    """A feed's website, which readers show the icon of (Feedly takes it from the channel's <link>), and its icon."""
+
+    site: str | None
+    icon: str | None
+
+    def default_site(self) -> str:
+        return HN_SITE
+
+    @property
+    def site_url(self) -> str:
+        return self.site or self.default_site()
+
+    @property
+    def icon_url(self) -> str:
+        return self.icon or urljoin(self.site_url, "/favicon.ico")
+
+
 DEDUPE = ("link", "link+title")
 
 
 @dataclass(frozen=True)
-class Feed:
+class Feed(_Site):
     file: str
     title: str
     tags: str
@@ -32,6 +59,8 @@ class Feed:
     max_items: int = 150
     ranked: bool = False  # only stories in HN's current ranking (topstories)
     exclude_titles: tuple[re.Pattern[str], ...] = ()  # regular expressions searched in each story's title
+    site: str | None = None  # Hacker News when unset
+    icon: str | None = None  # the site's /favicon.ico when unset
 
     @property
     def follows_front_page(self) -> bool:
@@ -39,7 +68,7 @@ class Feed:
 
 
 @dataclass(frozen=True)
-class Digest:
+class Digest(_Site):
     """One item per UTC day with that day's top stories."""
 
     file: str
@@ -48,6 +77,8 @@ class Digest:
     days: int = 7  # days kept
     publish_hour: int = 6  # UTC hour of the next day when a day's item appears
     exclude_titles: tuple[re.Pattern[str], ...] = ()  # stories never counted among a day's top
+    site: str | None = None  # Hacker News when unset
+    icon: str | None = None
 
 
 @dataclass(frozen=True)
@@ -65,7 +96,7 @@ class JsonFields:
 
 
 @dataclass(frozen=True)
-class Rss:
+class Rss(_Site):
     """Items from one or more RSS or Atom feeds, filtered, merged and enriched."""
 
     file: str
@@ -97,6 +128,11 @@ class Rss:
     # (source URL, label) pairs: the label goes in front of the titles of that
     # source's items, for sources whose titles don't say what they are ("v2.15.3").
     source_titles: tuple[tuple[str, str], ...] = ()
+    site: str | None = None  # the first source's site when unset
+    icon: str | None = None  # the site's /favicon.ico when unset
+
+    def default_site(self) -> str:
+        return _origin(self.sources[0])
 
     def label(self, source: str) -> str | None:
         return dict(self.source_titles).get(source)
@@ -143,8 +179,9 @@ FILTERS = (
 )
 REQUIRED = ("file", "title", "tags")
 FLAGS = ("ranked",)
+URLS = ("site", "icon")  # optional on every kind of table
 KNOWN = {f.name for f in fields(Feed)}
-NUMBERS = KNOWN - set(REQUIRED) - set(FLAGS) - {"exclude_titles"}
+NUMBERS = KNOWN - set(REQUIRED) - set(FLAGS) - {"exclude_titles"} - set(URLS)
 DIGEST_KNOWN = {f.name for f in fields(Digest)}
 
 
@@ -169,6 +206,7 @@ def _parse_digest(where: str, table: dict, used: list[str]) -> Digest:
         if value is not None and (not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high):
             raise ConfigError(f"{where}: {key} must be a whole number from {low} to {high}")
     _check_file(where, table["file"], used)
+    _check_urls(where, table)
     if "exclude_titles" in table:
         table = {**table, "exclude_titles": _patterns(where, "exclude_titles", table["exclude_titles"])}
     return Digest(**table)
@@ -184,6 +222,12 @@ MAX_KEEP_DAYS = 365
 
 def _web_url(value: object) -> bool:
     return isinstance(value, str) and value.startswith(("http://", "https://")) and len(value) > len("https://")
+
+
+def _check_urls(where: str, table: dict) -> None:
+    for key in URLS:
+        if key in table and not _web_url(table[key]):
+            raise ConfigError(f"{where}: {key} must be an http or https URL")
 
 
 def _strings(where: str, key: str, value: object) -> list[str]:
@@ -257,6 +301,10 @@ def _parse_rss(where: str, table: dict, used: list[str]) -> Rss:
         if stray:
             raise ConfigError(f"{where}: source_titles: {stray[0]} is not one of the sources")
         options["source_titles"] = tuple((url, label.strip()) for url, label in labels.items())
+    _check_urls(where, table)
+    for key in URLS:
+        if key in table:
+            options[key] = table[key]
     _check_file(where, table["file"], used)
     return Rss(file=table["file"], title=table["title"], sources=tuple(sources), **options)
 
@@ -319,6 +367,7 @@ def parse(text: str) -> Config:
         for key in FLAGS:
             if key in table and not isinstance(table[key], bool):
                 raise ConfigError(f"{where}: {key} must be true or false")
+        _check_urls(where, table)
         if "exclude_titles" in table:
             table = {**table, "exclude_titles": _patterns(where, "exclude_titles", table["exclude_titles"])}
         feed = Feed(**table)

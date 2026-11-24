@@ -137,7 +137,7 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
     for feed in feeds:
         seen = current.feeds[feed.file]
         items = [(current.stories[sid], t) for sid, t in seen.items()]
-        document = render_feed(feed, items, feed_url(page_url, feed.file), page_url, now)
+        document = render_feed(feed, items, feed_url(page_url, feed.file), now)
         (output_dir / feed.file).write_bytes(document)
         images = sum(1 for e, _ in items if e.preview and e.preview.image)
         excerpts = sum(1 for e, _ in items if (e.preview and e.preview.description) or e.story.text)
@@ -152,14 +152,14 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
             (dt.date.fromisoformat(day), [current.stories[sid] for sid in ids if sid in current.stories])
             for day, ids in days
         ]
-        document = render_digest(digest, entries, feed_url(page_url, digest.file), page_url, now)
+        document = render_digest(digest, entries, feed_url(page_url, digest.file), now)
         (output_dir / digest.file).write_bytes(document)
         print(f"{digest.file}: {len(entries)} days")
         health["digests"][digest.file] = {"days": len(entries)}
     for rss_feed in conf.rss:
         known = current.rss[rss_feed.file]
         rss_entries = [e for e in known.items.values() if state.visible(rss_feed, e, floor)]
-        document = render_rss_feed(rss_feed, rss_entries, feed_url(page_url, rss_feed.file), page_url, now)
+        document = render_rss_feed(rss_feed, rss_entries, feed_url(page_url, rss_feed.file), now)
         (output_dir / rss_feed.file).write_bytes(document)
         images = sum(1 for e in rss_entries if e.image)
         excerpts = sum(1 for e in rss_entries if e.excerpt)

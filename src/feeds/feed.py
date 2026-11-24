@@ -76,7 +76,6 @@ def item_html(entry: Entry, now: int) -> str:
 
 
 KINDS = ("Show HN", "Ask HN", "Launch HN", "Tell HN")
-ICON = "icon.png"  # in site/, copied next to the feeds
 
 
 def categories(story) -> list[str]:
@@ -91,21 +90,24 @@ def utc(timestamp: int) -> dt.datetime:
 
 
 def _channel(
-    title: str, description: str, feed_url: str, page_url: str, now: dt.datetime
+    feed: Feed | Digest | Rss, description: str, feed_url: str, now: dt.datetime
 ) -> tuple[ET.Element, ET.Element]:
+    """The <rss> and its <channel>. The channel's <link> and <image> are the site the feed is about, not this
+    one's, so readers show that site's icon: Feedly takes a feed's icon from its <link>."""
+    title = feed.title
     rss = ET.Element("rss", {"version": "2.0"})
     channel = ET.SubElement(rss, "channel")
     ET.SubElement(channel, "title").text = title
-    ET.SubElement(channel, "link").text = page_url
+    ET.SubElement(channel, "link").text = feed.site_url
     ET.SubElement(channel, "description").text = description
     ET.SubElement(channel, f"{{{ATOM}}}link", {"href": feed_url, "rel": "self", "type": "application/rss+xml"})
     ET.SubElement(channel, "lastBuildDate").text = format_datetime(now)
     ET.SubElement(channel, "generator").text = "feeds"
     ET.SubElement(channel, "ttl").text = "30"
     image = ET.SubElement(channel, "image")
-    ET.SubElement(image, "url").text = page_url.rstrip("/") + "/" + ICON
+    ET.SubElement(image, "url").text = feed.icon_url
     ET.SubElement(image, "title").text = title
-    ET.SubElement(image, "link").text = page_url
+    ET.SubElement(image, "link").text = feed.site_url
     return rss, channel
 
 
@@ -135,12 +137,10 @@ def digest_entry_html(rank: int, entry: Entry) -> str:
     return "\n".join(parts)
 
 
-def render_digest(
-    digest: Digest, days: list[tuple[dt.date, list[Entry]]], feed_url: str, page_url: str, now: dt.datetime
-) -> bytes:
+def render_digest(digest: Digest, days: list[tuple[dt.date, list[Entry]]], feed_url: str, now: dt.datetime) -> bytes:
     """The digest document: one item per day, newest first, each listing that day's top stories."""
     description = f"The {digest.top} Hacker News stories with the most points each day (UTC)"
-    rss, channel = _channel(digest.title, description, feed_url, page_url, now)
+    rss, channel = _channel(digest, description, feed_url, now)
     for day, entries in days:
         item = ET.SubElement(channel, "item")
         ET.SubElement(item, "title").text = f"Hacker News digest: {day:%a %d %b %Y}"
@@ -156,7 +156,7 @@ def render_digest(
     return _document(rss)
 
 
-def render_feed(feed: Feed, items: list[tuple[Entry, int]], feed_url: str, page_url: str, now: dt.datetime) -> bytes:
+def render_feed(feed: Feed, items: list[tuple[Entry, int]], feed_url: str, now: dt.datetime) -> bytes:
     """The feed document. items pairs each entry with when the feed first listed it, newest first.
 
     pubDate is that first-listed time, not the story's age: a story that
@@ -164,7 +164,7 @@ def render_feed(feed: Feed, items: list[tuple[Entry, int]], feed_url: str, page_
     a reader sorting by date should show it at the top.
     """
     description = f"{feed.title}, with each linked page's image and excerpt"
-    rss, channel = _channel(feed.title, description, feed_url, page_url, now)
+    rss, channel = _channel(feed, description, feed_url, now)
     for entry, first_seen in items:
         story = entry.story
         item = ET.SubElement(channel, "item")
@@ -206,12 +206,12 @@ def distinct(categories: tuple[str, ...]) -> list[str]:
     return list(seen.values())
 
 
-def render_rss_feed(feed: Rss, entries: list[RssEntry], feed_url: str, page_url: str, now: dt.datetime) -> bytes:
+def render_rss_feed(feed: Rss, entries: list[RssEntry], feed_url: str, now: dt.datetime) -> bytes:
     """An RSS feed's document, entries newest first. Items keep the source's title, link, guid, date and categories."""
     description = f"{feed.title}, from {', '.join(feed.sources)}"
     if feed.enrich:
         description += ", with each article's image and excerpt"
-    rss, channel = _channel(feed.title, description, feed_url, page_url, now)
+    rss, channel = _channel(feed, description, feed_url, now)
     for entry in entries:
         source = entry.item
         item = ET.SubElement(channel, "item")

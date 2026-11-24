@@ -286,3 +286,38 @@ def test_rss_source_titles():
 def test_bad_source_titles_fail_with_a_message(titles, message):
     with pytest.raises(ConfigError, match=message):
         parse(RSS + 'source = "https://a.example/r.atom"\n' + titles + "\n")
+
+
+def test_site_and_icon_defaults_and_overrides():
+    conf = parse(
+        '[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "story"\n'
+        '[[digest]]\nfile = "d.xml"\ntitle = "D"\nsite = "https://links.example.org/"\n'
+        + RSS
+        + 'source = "https://feeds.example.com/x/rss?y=1"\n'
+        + '[[rss]]\nfile = "s.xml"\ntitle = "S"\nsource = "https://a.example/feed"\n'
+        + 'site = "https://www.example.org/"\nicon = "https://www.example.org/favicon.png"\n'
+    )
+    (feed,), (digest,), (plain, labelled) = conf.feeds, conf.digests, conf.rss
+    assert (feed.site_url, feed.icon_url) == (
+        "https://news.ycombinator.com/",
+        "https://news.ycombinator.com/favicon.ico",
+    )
+    assert (digest.site_url, digest.icon_url) == ("https://links.example.org/", "https://links.example.org/favicon.ico")
+    assert (plain.site_url, plain.icon_url) == ("https://feeds.example.com/", "https://feeds.example.com/favicon.ico")
+    assert (labelled.site_url, labelled.icon_url) == ("https://www.example.org/", "https://www.example.org/favicon.png")
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        (
+            '[[feed]]\nfile = "a.xml"\ntitle = "A"\ntags = "story"\nsite = "news.ycombinator.com"',
+            "feed #1: site must be",
+        ),
+        ('[[digest]]\nfile = "d.xml"\ntitle = "D"\nicon = 1', "digest #1: icon must be an http or https URL"),
+        (RSS + 'source = "https://a.example/"\nicon = "file:///x.png"', "rss #1: icon must be an http or https URL"),
+    ],
+)
+def test_bad_site_or_icon_fails_with_a_message(text, message):
+    with pytest.raises(ConfigError, match=message):
+        parse(text)
