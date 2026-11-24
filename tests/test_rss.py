@@ -6,7 +6,7 @@ import pytest
 
 from feeds import USER_AGENT, rss
 from feeds.config import Rss
-from feeds.rss import Fetched, Item, canonical_link, dedup_key, fetch, keep, normal_title, parse
+from feeds.rss import Drop, Fetched, Item, canonical_link, dedup_key, fetch, keep, normal_title, parse, select, verdict
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NEWS_SAMPLE = (FIXTURES / "newssite.xml").read_bytes()
@@ -335,3 +335,97 @@ def test_normal_title_folds_case_unicode_and_punctuation():
 def test_dedup_key():
     assert dedup_key(item(link="https://News.example/a/?utm_source=x")) == "https://news.example/a"
     assert dedup_key(item(link=None, guid="tag:x,2026:1")) == "guid:tag:x,2026:1"
+
+
+@pytest.mark.parametrize(
+    ("options", "fields", "drop"),
+    [
+        ({}, {}, None),
+        ({"include_categories": frozenset({"world"})}, {"categories": ("Sport",)}, Drop("include_categories")),
+        ({"include_sections": frozenset({"world"})}, {"categories": ("Sport", "World")}, Drop("include_sections")),
+        ({"include_titles": (re.compile("^News"),)}, {"title": "Old News"}, Drop("include_titles")),
+        ({"include_links": (re.compile("/articles/"),)}, {"link": None}, Drop("include_links")),
+        (
+            {"exclude_categories": frozenset({"bits"})},
+            {"categories": ("Mondo", "BITS")},
+            Drop("exclude_categories", "bits"),
+        ),
+        ({"exclude_sections": frozenset({"sport"})}, {"categories": ("Sport",)}, Drop("exclude_sections", "sport")),
+        (
+            {"exclude_titles": (re.compile("(?i)sponsored"),)},
+            {"title": "Sponsored"},
+            Drop("exclude_titles", "(?i)sponsored"),
+        ),
+        (
+            {"exclude_links": (re.compile("/video/"),)},
+            {"link": "https://n.example/video/1"},
+            Drop("exclude_links", "/video/"),
+        ),
+        ({"exclude_authors": frozenset({"bot"})}, {"author": "Bot"}, Drop("exclude_authors", "bot")),
+    ],
+)
+def test_verdict_names_the_filter_that_drops(options, fields, drop):
+    assert verdict(item(**fields), feed(**options)) == drop
+
+
+def test_verdict_reports_the_first_filter_in_order():
+    both = feed(include_titles=(re.compile("Kyiv"),), exclude_categories=frozenset({"bits"}))
+    assert verdict(item(title="Paris", categories=("Bits",)), both) == Drop("include_titles")
+    assert verdict(item(title="Kyiv", categories=("Bits",)), both) == Drop("exclude_categories", "bits")
+
+
+A, B = "https://a.example/feed", "https://b.example/feed"
+
+
+def test_select_filters_merges_copies_and_reports_every_item():
+    two = Rss("t.xml", "T", (A, B), exclude_categories=frozenset({"bits"}))
+    first = item(guid="a1", link="https://news.example/x", published=200, categories=("World",))
+    copy = item(guid="b1", link="https://NEWS.example/x/?utm_source=b", published=100, categories=("Europe",))
+    dropped = item(guid="a2", link="https://news.example/y", categories=("Bits",))
+    chosen = select(two, [(A, [first, dropped]), (B, [copy])])
+    # The earliest copy is kept, with the categories of both.
+    assert list(chosen.items) == ["https://news.example/x"]
+    kept = chosen.items["https://news.example/x"]
+    assert kept.guid == "b1" and kept.categories == ("Europe", "World")
+    assert chosen.sources == {"https://news.example/x": [A, B]}
+    assert chosen.origin == {} and chosen.moved == set()
+    assert [(c.source, c.item.guid, c.drop, c.key, c.merged) for c in chosen.choices] == [
+        (A, "a1", None, "https://news.example/x", True),
+        (A, "a2", Drop("exclude_categories", "bits"), None, False),
+        (B, "b1", None, "https://news.example/x", False),
+    ]
+
+
+def test_select_keeps_known_stories_and_follows_a_moved_link():
+    known = {"https://news.example/old": item(guid="g", link="https://news.example/old")}
+    moved = item(guid="g", link="https://news.example/new", title="Edited")
+    chosen = select(feed(), [(SOURCE, [moved])], known)
+    assert list(chosen.items) == ["https://news.example/new"]
+    assert chosen.items["https://news.example/new"].title == "Edited"
+    assert chosen.origin == {"https://news.example/new": "https://news.example/old"}
+    assert chosen.moved == {"https://news.example/new"}
+    assert chosen.sources == {"https://news.example/new": [SOURCE]}
+    assert chosen.choices[0].key == "https://news.example/new" and chosen.choices[0].merged
+
+
+def test_select_renames_the_keys_of_earlier_copies_when_a_link_moves():
+    two = Rss("t.xml", "T", (A, B))
+    original = item(guid="g", link="https://news.example/old", published=100)
+    edited = item(guid="g", link="https://news.example/new", published=200)
+    chosen = select(two, [(A, [original]), (B, [edited])])
+    assert list(chosen.items) == ["https://news.example/new"]
+    assert chosen.moved == {"https://news.example/new"}
+    assert chosen.sources == {"https://news.example/new": [A, B]}
+    assert [c.key for c in chosen.choices] == ["https://news.example/new", "https://news.example/new"]
+    # Moved twice in one run: the key follows, and stays marked as moved.
+    again = item(guid="g", link="https://news.example/newer", published=300)
+    chosen = select(Rss("t.xml", "T", (A, B, SOURCE)), [(A, [original]), (B, [edited]), (SOURCE, [again])])
+    assert list(chosen.items) == ["https://news.example/newer"] and chosen.moved == {"https://news.example/newer"}
+
+
+def test_select_merges_by_title_with_link_title_dedupe():
+    titled = Rss("t.xml", "T", (A, B), dedupe="link+title")
+    one = item(guid="1", link="https://a.example/1", title="Kyiv’s bridges", published=1)
+    two = item(guid="2", link="https://b.example/2", title="kyiv s bridges", published=2)
+    assert list(select(titled, [(A, [one]), (B, [two])]).items) == ["https://a.example/1"]
+    assert len(select(Rss("t.xml", "T", (A, B)), [(A, [one]), (B, [two])]).items) == 2

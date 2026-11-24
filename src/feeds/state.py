@@ -14,14 +14,14 @@ import urllib.error
 import urllib.request
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import USER_AGENT
 from .comments import Comment
 from .config import Digest, Feed, Rss
 from .preview import Preview
-from .rss import Fetched, Item, canonical_link, dedup_key, keep, normal_title
+from .rss import Fetched, Item, keep, select
 from .source import Story
 
 VERSION = 2  # 2 added the rss section; a version 1 file loads with it empty
@@ -307,56 +307,19 @@ def update_rss(
 
 
 def _merge(feed: Rss, items: dict[str, RssEntry], listed: list[tuple[str, list[Item]]], now: int) -> None:
-    """Add the sources' items that pass the filters to items, one entry per story.
-
-    Two items are one story when their canonical links or their guids match,
-    or, with dedupe = "link+title", their normalised titles. The entry already
-    in the state stays; among new ones the earliest published wins, then the
-    source and position order. Every copy adds its categories.
-    """
+    """Add the sources' items that pass the filters to items, one entry per story (see rss.select)."""
+    chosen = select(feed, listed, {k: e.item for k, e in items.items()})
     order = {url: n for n, url in enumerate(feed.sources)}
-    by_link = {canonical_link(e.item.link): k for k, e in items.items() if e.item.link}
-    by_guid = {e.item.guid: k for k, e in items.items()}
-    by_title: dict[str, str] = {}
-    titles = feed.dedupe == "link+title"
-    if titles:
-        by_title = {t: k for k, e in items.items() if (t := normal_title(e.item.title))}
-    candidates = [(item, url, n) for url, found in listed for n, item in enumerate(found) if keep(item, feed)]
-    candidates.sort(key=lambda c: (c[0].published is None, c[0].published or 0, order[c[1]], c[2]))
-    for item, url, _ in candidates:
-        link = canonical_link(item.link) if item.link else None
-        title = normal_title(item.title) if titles else ""
-        key = (
-            (by_link.get(link) if link else None)
-            or by_guid.get(item.guid)
-            or (by_title.get(title) if title else None)
-            or (dedup_key(item) if dedup_key(item) in items else None)
-        )
-        if key is None:
-            key = dedup_key(item)
-            entry = items[key] = RssEntry(item, now)
-        else:
-            entry = items[key]
-            categories = entry.item.categories + tuple(c for c in item.categories if c not in entry.item.categories)
-            if item.guid == entry.item.guid:  # the same item again, perhaps edited
-                moved = item.link != entry.item.link
-                entry.item = replace(item, categories=categories)
-                if moved:  # its preview no longer applies, and its key follows the link
-                    entry.preview, entry.attempts = None, 0
-                    if dedup_key(item) not in items:
-                        old, key = key, dedup_key(item)
-                        items[key] = items.pop(old)
-                        for index in (by_link, by_guid, by_title):
-                            index.update({k: key for k, v in index.items() if v == old})
-            else:
-                entry.item = replace(entry.item, categories=categories)
-        if url not in entry.from_sources:
-            entry.from_sources = sorted([*entry.from_sources, url], key=order.__getitem__)
-        if link:
-            by_link.setdefault(link, key)
-        by_guid.setdefault(item.guid, key)
-        if title:
-            by_title.setdefault(title, key)
+    known = dict(items)
+    items.clear()
+    for key, item in chosen.items.items():
+        entry = known[chosen.origin[key]] if key in chosen.origin else RssEntry(item, now)
+        entry.item = item
+        if key in chosen.moved:
+            entry.preview, entry.attempts = None, 0
+        if key in chosen.sources:
+            entry.from_sources = sorted({*entry.from_sources, *chosen.sources[key]}, key=order.__getitem__)
+        items[key] = entry
 
 
 def _fetch_all(todo: dict[str, list], fetch, workers: int) -> tuple[int, list[tuple[str, str]]]:
