@@ -93,7 +93,7 @@ top = 15
 #   exclude_text        drop items whose title or description text matches any
 #                       of these regular expressions, when first seen
 #   enrich              fetch each article's image and excerpt when the source
-#                       lacks them (default true)
+#                       lacks them or has only a teaser (default true)
 #   exclude_paywalled   fetch every article's page and hide the ones it marks as
 #                       not free (JSON-LD isAccessibleForFree false); needs
 #                       enrich (default false)

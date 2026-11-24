@@ -21,7 +21,7 @@ import feedparser
 
 from . import USER_AGENT
 from .config import JsonFields, Rss
-from .text import excerpt, plain_paragraphs, plain_text, squash
+from .text import excerpt, pixels, plain_paragraphs, plain_text, squash
 
 TIMEOUT = 30
 RETRY_DELAY = 2  # seconds before the one retry after a network error
@@ -29,6 +29,7 @@ MAX_BYTES = 10 * 1024 * 1024
 ACCEPT = "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.1"
 TRACKING = {"fbclid", "gclid", "ref", "mc_cid", "mc_eid"}  # and every utm_* parameter
 TITLE_LIMIT = 200  # for an item with no title, which gets the start of its text instead
+ICON_SIZE = 100  # pixels: an <img> declared narrower or shorter than this is a tracking pixel, an emoji or an icon
 TEXT_LIMIT = 20_000  # of an item's text kept for exclude_text; never stored
 
 
@@ -206,7 +207,9 @@ class _FirstImage(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag == "img" and self.src is None:
-            self.src = dict(attrs).get("src") or None
+            a = dict(attrs)
+            if all(s is None or s >= ICON_SIZE for s in (pixels(a.get("width")), pixels(a.get("height")))):
+                self.src = a.get("src") or None
 
 
 def _first_image(html: str) -> str | None:
@@ -217,14 +220,15 @@ def _first_image(html: str) -> str | None:
 
 
 def _image(entry, html: str, base: str) -> str | None:
+    """The item's picture: full-size images first, then its thumbnail, often a crop too small for an article view."""
     candidates = [e.get("href") for e in entry.get("enclosures", []) if (e.get("type") or "").startswith("image/")]
     candidates += [
         m.get("url")
         for m in entry.get("media_content", [])
         if m.get("medium") == "image" or (m.get("type") or "").startswith("image/")
     ]
-    candidates += [m.get("url") for m in entry.get("media_thumbnail", [])]
     candidates.append(_first_image(html) if html else None)
+    candidates += [m.get("url") for m in entry.get("media_thumbnail", [])]
     return next((u for u in (_web(c, base) for c in candidates) if u), None)
 
 

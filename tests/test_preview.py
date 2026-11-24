@@ -102,9 +102,24 @@ def test_first_paragraph_inside_article_stands_in_for_a_description():
     assert parse_preview(html, "https://example.com/").description == f"{LONG} (the article) next line"
 
 
-def test_first_long_paragraph_anywhere_without_an_article():
+def test_paragraphs_anywhere_without_an_article():
     html = f"<body><header><p>{LONG} (header)</p></header><p>{LONG} (one)<p>{LONG} (two)</body>"
-    assert parse_preview(html, "https://example.com/").description == f"{LONG} (one)"
+    assert parse_preview(html, "https://example.com/").description == f"{LONG} (one)\n\n{LONG} (two)"
+
+
+def test_opening_paragraphs_skip_short_ones_and_captions():
+    html = f"""<body><article><p>Too short to open with.</p><p>{LONG} (first)</p>
+    <figure><img src="/x.png"><figcaption><p>{LONG} (caption)</p></figcaption></figure>
+    <p>Advertisement</p><p>A short paragraph that still counts.</p></article></body>"""
+    assert parse_preview(html, "https://example.com/").description == (
+        f"{LONG} (first)\n\nA short paragraph that still counts."
+    )
+
+
+def test_opening_paragraphs_stop_at_the_excerpt_limit():
+    html = "<body><main>" + f"<p>{LONG}</p>" * 100 + "</main></body>"
+    description = parse_preview(html, "https://example.com/").description
+    assert description.endswith(LONG) and len(description) <= EXCERPT_LIMIT
 
 
 def test_unclosed_paragraph_at_the_end_counts():
@@ -116,9 +131,39 @@ def test_script_text_is_never_a_paragraph():
     assert parse_preview(html, "https://example.com/").description is None
 
 
-def test_meta_description_beats_paragraphs():
+def test_a_longer_opening_beats_the_meta_description():
     html = f'<head><meta name="description" content="Meta"></head><body><article><p>{LONG}</p></article></body>'
-    assert parse_preview(html, "https://example.com/").description == "Meta"
+    assert parse_preview(html, "https://example.com/").description == LONG
+
+
+def test_a_longer_meta_description_beats_the_opening():
+    html = f'<head><meta name="description" content="{LONG} (meta)"></head><body><p>{LONG}</p></body>'
+    assert parse_preview(html, "https://example.com/").description == f"{LONG} (meta)"
+
+
+@pytest.mark.parametrize(
+    ("img", "image"),
+    [
+        ('<img src="/pic.jpg">', "https://example.com/pic.jpg"),
+        ('<figure><img src="/hero.jpg"><figcaption>Hero</figcaption></figure>', "https://example.com/hero.jpg"),
+        ('<img src="/pic.jpg" width="1200" height="800px">', "https://example.com/pic.jpg"),
+        ('<img src="data:image/gif;base64,R0lG" data-src="/lazy.jpg">', "https://example.com/lazy.jpg"),
+        ('<img src="/icon.png" width="32" height="32">', None),
+        ('<img src="javascript:alert(1)">', None),
+    ],
+)
+def test_the_articles_first_image_stands_in_for_a_missing_og_image(img, image):
+    assert parse_preview(f"<body><article>{img}</article></body>", "https://example.com/a").image == image
+
+
+def test_images_outside_the_article_text_are_not_used():
+    html = '<body><img src="/logo.png"><article><aside><img src="/ad.png"></aside></article></body>'
+    assert parse_preview(html, "https://example.com/").image is None
+
+
+def test_og_image_beats_the_articles_image():
+    html = '<head><meta property="og:image" content="/og.png"></head><body><main><img src="/in.png"></main></body>'
+    assert parse_preview(html, "https://example.com/").image == "https://example.com/og.png"
 
 
 def ld(*blocks: str) -> str:

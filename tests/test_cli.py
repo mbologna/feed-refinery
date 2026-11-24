@@ -263,6 +263,9 @@ def test_build_rss_feeds_end_to_end(tmp_path, web, capsys):
     )
     for url in NO_TEXT:
         web.html(url, '<head><meta property="og:image" content="/og.jpg"><meta name="description" content="OG"></head>')
+    # The other items' descriptions are teasers: their pages are read too, and say no more.
+    web.html("https://www.newssite.example/", "<p>Nothing longer here.</p>")
+    web.html("https://blog.example.org/", "<p>Nothing longer here.</p>")
     out = tmp_path / "public"
     now = dt.datetime(2026, 11, 23, 21, 30, tzinfo=dt.UTC)
 
@@ -270,10 +273,14 @@ def test_build_rss_feeds_end_to_end(tmp_path, web, capsys):
     log = capsys.readouterr().out
     assert "newssite.xml: https://www.newssite.example/feed: 12 items, 7 pass the filters" in log
     assert "mixed.xml: https://blog.example.org/feed.atom: 3 items, 1 pass the filters" in log
-    # One request per source, though two feeds share News Site; one per missing preview.
+    # One request per source, though two feeds share News Site; one per item that lacks an image or has only a
+    # teaser, which is every item here, though two feeds share some.
     assert web.requests.count(NEWS_SAMPLE_FEED) == 1
-    assert sorted(r for r in web.requests if r not in (NEWS_SAMPLE_FEED, ATOM_FEED)) == sorted([TOPICS, *NO_TEXT])
-    assert "rss previews: fetched 3 new, 0 failed" in log
+    pages = sorted(r for r in web.requests if r not in (NEWS_SAMPLE_FEED, ATOM_FEED))
+    published = items_of(out / "newssite.xml") + items_of(out / "mixed.xml")
+    assert pages == sorted({i.findtext("link") for i in published} - {None})
+    assert {TOPICS, *NO_TEXT} <= set(pages)
+    assert f"rss previews: fetched {len(pages)} new, 0 failed" in log
 
     newssite = items_of(out / "newssite.xml")
     assert len(newssite) == 7

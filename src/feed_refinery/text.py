@@ -47,6 +47,12 @@ def plain_text(html: str) -> str:
     return squash(plain_paragraphs(html))
 
 
+def pixels(value: str | None) -> int | None:
+    """An <img> width or height attribute in pixels; None when it's missing or not in pixels ("100%")."""
+    digits = (value or "").strip().removesuffix("px")
+    return int(digits) if digits.isdigit() else None
+
+
 def squash(text: str) -> str:
     return " ".join(text.split())
 

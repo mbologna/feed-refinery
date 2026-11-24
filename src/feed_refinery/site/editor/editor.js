@@ -95,7 +95,7 @@ const FIELDS = {
     ...Object.keys(LISTS).map((key) => ({ key, type: "list" })),
     {
       key: "enrich",
-      label: "Fetch each article's image and excerpt when the source lacks them",
+      label: "Fetch each article's image and excerpt when the source lacks them or has only a teaser",
       type: "flag",
       default: true,
     },

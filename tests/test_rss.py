@@ -132,6 +132,22 @@ def test_parse_media_content_and_relative_images():
     assert data.categories == ("A", "B")
 
 
+def test_full_size_images_come_before_the_thumbnail_and_icons_are_skipped():
+    doc = b"""<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>T</title>
+    <item><title>Both</title><link>https://s.example/1</link>
+      <media:thumbnail url="https://s.example/thumb.jpg"/>
+      <description><![CDATA[<img src="/pixel.gif" width="1" height="1"><img src="/full.jpg" width="1200"> Text]]></description>
+    </item>
+    <item><title>Only icons</title><link>https://s.example/2</link>
+      <media:thumbnail url="https://s.example/thumb.jpg"/>
+      <description><![CDATA[<img src="/smiley.png" width="16px"> Text]]></description>
+    </item>
+    </channel></rss>"""
+    both, icons = parse(doc, "https://s.example/feed")
+    assert both.image == "https://s.example/full.jpg"
+    assert icons.image == "https://s.example/thumb.jpg"
+
+
 def test_parse_rejects_what_isnt_a_feed():
     with pytest.raises(ValueError, match="not a feed"):
         parse(BROKEN, SOURCE, "text/html")

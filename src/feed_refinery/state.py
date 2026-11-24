@@ -34,6 +34,7 @@ COMMENT_INTERVAL = 2 * 3600  # how often a listed story's top comment is looked 
 RETRY_STATUSES = {408, 429}  # client errors worth another try; other 4xx won't change
 HN_RECHECK = 6 * 3600  # how often a new item's HN points are looked up again
 HN_RECHECK_FOR = 2 * 86400  # for how long after an item first appears: an HN story's points settle in a day
+TEASER = 500  # characters: a source's text shorter than this is a teaser, and the article's page may say more
 
 
 @dataclass
@@ -78,7 +79,9 @@ class RssEntry:
 
     @property
     def excerpt(self) -> str | None:
-        return self.item.summary or (self.preview.description if self.preview else None)
+        """The longer of the source's text and the page's; the source's on a tie."""
+        texts = [t for t in (self.item.summary, self.preview.description if self.preview else None) if t]
+        return max(texts, key=len, default=None)
 
 
 @dataclass
@@ -397,7 +400,7 @@ def fetch_previews(state: State, fetch, workers: int = 8) -> tuple[int, list[tup
 def fetch_rss_previews(
     state: State, feeds: Sequence[Rss], fetch, workers: int = 8
 ) -> tuple[int, list[tuple[str, str]]]:
-    """Fetch the previews of the enriched feeds' items that lack an image or an excerpt, with the stories' retry rules.
+    """Fetch the previews of the enriched feeds' items that lack an image or have only a teaser, with the stories' retry rules.
 
     With exclude_paywalled every item's page is fetched: it says whether the item is paywalled.
     """
@@ -408,7 +411,7 @@ def fetch_rss_previews(
         for entry in state.rss.get(feed.file, RssFeed()).items.values():
             if entry.preview is not None or entry.attempts >= MAX_ATTEMPTS:
                 continue
-            if entry.item.link and (feed.exclude_paywalled or not (entry.item.image and entry.item.summary)):
+            if entry.item.link and (feed.exclude_paywalled or not entry.item.image or len(entry.item.summary) < TEASER):
                 todo.setdefault(entry.item.link, []).append(entry)
             else:
                 entry.preview = Preview()  # nothing to fetch, or nothing missing

@@ -1,4 +1,4 @@
-"""Link previews: the image, description and site name a page declares in its <head>."""
+"""Link previews: the image, description and site name a page declares in its <head>, or its opening paragraphs."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
 from . import USER_AGENT
-from .text import excerpt, squash
+from .text import EXCERPT_LIMIT, PARAGRAPH, excerpt, pixels, squash
 
 MAX_BYTES = 512 * 1024  # the <head> comes first; no need for the whole page
 HTML_TYPES = {"text/html", "application/xhtml+xml"}
@@ -28,18 +28,22 @@ class Preview:
     paywalled: bool | None = None
 
 
-PARAGRAPH_MIN = 80  # shorter paragraphs are bylines, captions and the like
-SKIPPED = {"script", "style", "noscript", "nav", "header", "footer", "aside", "form"}
+PARAGRAPH_MIN = 80  # the first paragraph kept: shorter ones are bylines, captions and the like
+LATER_MIN = 30  # the next ones: shorter ones are "Advertisement" and the like
+IMAGE_MIN = 200  # pixels: an <img> declared narrower or shorter is an icon, not the article's picture
+SKIPPED = {"script", "style", "noscript", "nav", "header", "footer", "aside", "form", "figcaption"}
 CONTENT = {"article", "main"}
 JSON_LD = "application/ld+json"
 
 
 class _PageParser(HTMLParser):
-    """Collects <meta property|name=... content=...> up to the end of <head>, and the first real paragraphs.
+    """Collects <meta property|name=... content=...> up to the end of <head>, and the opening paragraphs.
 
-    The paragraphs stand in for a missing description: the first one of at
-    least PARAGRAPH_MIN characters inside <article> or <main>, else the first
-    anywhere, outside navigation, headers, footers and scripts.
+    The paragraphs are the page's opening: those inside <article> or <main>,
+    else those anywhere, outside navigation, headers, footers, captions and
+    scripts, from the first of at least PARAGRAPH_MIN characters, up to
+    EXCERPT_LIMIT characters in all. The first <img> inside <article> or
+    <main> stands in for a missing og:image.
     """
 
     def __init__(self) -> None:
@@ -49,8 +53,9 @@ class _PageParser(HTMLParser):
         self.skip = 0  # depth inside SKIPPED elements
         self.content = 0  # depth inside CONTENT elements
         self.buffer: list[str] | None = None  # the open <p>'s text
-        self.first_paragraph: str | None = None
-        self.content_paragraph: str | None = None
+        self.paragraphs: list[str] = []
+        self.content_paragraphs: list[str] = []  # those inside CONTENT elements
+        self.content_image: str | None = None  # the first <img> inside CONTENT elements, as written
         self.json_ld: list[str] = []  # the text of each <script type="application/ld+json">
         self.ld_buffer: list[str] | None = None
 
@@ -75,6 +80,13 @@ class _PageParser(HTMLParser):
                 self.buffer = []
         elif tag == "br" and self.buffer is not None:
             self.buffer.append(" ")
+        elif tag == "img" and self.content and not self.skip and self.content_image is None:
+            a = {k: v for k, v in attrs if v is not None}
+            sizes = [s for s in (pixels(a.get("width")), pixels(a.get("height"))) if s is not None]
+            # Lazy-loading pages put a placeholder in src and the image in data-src.
+            src = next((s for s in (a.get("src"), a.get("data-src")) if s and not s.startswith("data:")), None)
+            if src and all(s >= IMAGE_MIN for s in sizes):
+                self.content_image = src
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "script" and self.ld_buffer is not None:
@@ -101,16 +113,18 @@ class _PageParser(HTMLParser):
             return
         text = squash("".join(self.buffer))
         self.buffer = None
-        if len(text) < PARAGRAPH_MIN:
-            return
-        if self.first_paragraph is None:
-            self.first_paragraph = text
-        if self.content and self.content_paragraph is None:
-            self.content_paragraph = text
+        _keep(self.paragraphs, text)
+        if self.content:
+            _keep(self.content_paragraphs, text)
 
     def close(self) -> None:
         super().close()
         self._close_paragraph()
+
+
+def _keep(paragraphs: list[str], text: str) -> None:
+    if len(text) >= (LATER_MIN if paragraphs else PARAGRAPH_MIN) and sum(map(len, paragraphs)) < EXCERPT_LIMIT:
+        paragraphs.append(text)
 
 
 def _free_flags(data: object) -> Iterator[bool]:
@@ -153,9 +167,13 @@ def parse_preview(html: str, base_url: str) -> Preview:
     meta = parser.meta
 
     # The first image that resolves to a web URL: skip data: and javascript: ones.
-    candidates = (urljoin(base_url, meta[k]) for k in IMAGE_KEYS if k in meta)
+    declared = [meta[k] for k in IMAGE_KEYS if k in meta] + [parser.content_image or ""]
+    candidates = (urljoin(base_url, u) for u in declared if u)
     image = next((u for u in candidates if urlsplit(u).scheme in ("http", "https")), None)
-    description = _first(meta, DESCRIPTION_KEYS) or parser.content_paragraph or parser.first_paragraph
+    # The article's opening when it says more than the page's own summary.
+    opening = PARAGRAPH.join(parser.content_paragraphs or parser.paragraphs)
+    summary = _first(meta, DESCRIPTION_KEYS) or ""
+    description = opening if len(opening) > len(summary) else summary
     site_name = meta.get("og:site_name")
     return Preview(
         image=image,

@@ -15,8 +15,8 @@ It's an engine: it builds whatever feeds a `feeds.toml` lists, and [`examples/fe
 Each item of an HN feed has:
 
 - the title, linking to the article (Ask HN and other text posts link to the thread);
-- the page's `og:image` (falling back to `twitter:image`), also as `media:thumbnail` for list views;
-- the site name (or the domain) and the page's description, cut to about 2,000 characters. A page without a description gets its first real paragraph instead (inside `<article>` or `<main>` when it has one);
+- the page's `og:image` (falling back to `twitter:image`, then to the first `<img>` in its `<article>` or `<main>` that isn't declared smaller than 200 pixels), also as `media:thumbnail` for list views;
+- the site name (or the domain) and the page's excerpt: its opening paragraphs (inside `<article>` or `<main>` when it has one, from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 2,000 characters;
 - the submitter's own text, for Show HN and other posts that have some, quoted below the page's description (or in its place);
 - the top comment, as HN ranks it, cut to about 2,000 characters, with a link to it;
 - links to the article and the HN thread, the comment count, the points, and the story's age and author, as `150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
@@ -33,14 +33,14 @@ Job posts ("Acme (YC S13) Is Hiring") are ads and never become items.
 
 An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categories, and the author as `dc:creator`. Its description has:
 
-- the image: the source's (an image enclosure, `media:content`, `media:thumbnail` or the first `<img>` in its description), else the article page's `og:image`, also as `media:thumbnail`;
-- the excerpt: the source's description as plain text, cut to about 2,000 characters, else the page's description.
+- the image: the source's (an image enclosure, `media:content`, the first `<img>` in its description that isn't declared smaller than 100 pixels, or `media:thumbnail`, in that order: thumbnails are often small crops), else the article page's, as for HN items, also as `media:thumbnail`;
+- the excerpt: the source's description as plain text or the page's excerpt, whichever is longer, cut to about 2,000 characters.
 
 Excerpts, here and in HN items, keep their paragraphs. One that's too long ends with its last whole paragraph or sentence when that keeps at least half of it, else at a word, with an ellipsis.
 
 The item's link leads to the article, so the description doesn't repeat it: readers build their preview text from the description. An item with no excerpt gets a link to the article instead, so its description isn't empty.
 
-The article page is fetched only for an item whose source lacks the image or the excerpt, once per item, as for HN stories. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
+The article page is fetched only for an item whose source lacks the image or has only a teaser (under 500 characters of text), once per item, as for HN stories. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
 
 ## Feeds
 
@@ -77,7 +77,7 @@ Each `[[rss]]` table publishes items from other feeds:
 - `include_titles`, `exclude_titles`, `include_links`, `exclude_links`: [regular expressions](https://docs.python.org/3/library/re.html#regular-expression-syntax), each searched anywhere in the item's title or link. Start one with `(?i)` to ignore case.
 - `exclude_authors`: authors, matched against the whole name, ignoring case.
 - `exclude_text`: regular expressions searched in the item's title and the source's whole description, as plain text, when the item first appears. For example, a vendor's studies "sponsored by" it whose titles don't say so.
-- `enrich`: `false` skips fetching article pages, so items carry only what the source gives (default `true`).
+- `enrich`: `false` skips fetching article pages, so items carry only what the source gives (default `true`). With `true`, an item whose source lacks an image or has only a teaser gets the page's image and opening.
 - `exclude_paywalled`: `true` fetches every item's page and hides the items whose [JSON-LD](https://developers.google.com/search/docs/appearance/structured-data/paywalled-content) says `"isAccessibleForFree": false`, anywhere in the page's structured data (default `false`; needs `enrich`). An item is held back until its page has been read, so a paywalled one never shows for a build; one whose page fails three times shows. A page without the marker counts as free. News sites mark their subscriber-only newsletters this way, so one made free gets in by itself.
 - `exclude_on_hacker_news`: `true` hides the items whose link was a story in the HN feeds: one the front page, best or top feeds hold, or one HN gave at least the lowest `min_points` of the `[[feed]]` tables (100 when none sets one), looked up in Algolia by URL. The lookup runs when an item appears and every 6 hours for its first 2 days, while a story's points still grow; a failed one leaves the item shown and is retried on the next build (default `false`).
 - `site`, `icon`: as for an HN feed; `site` defaults to the first source's site (its scheme and host). Set it when that host isn't the site readers know (a `feeds.` host, `github.com`), and `icon` when the site's `/favicon.ico` is missing or wrong.
