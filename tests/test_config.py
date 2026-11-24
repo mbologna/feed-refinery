@@ -9,27 +9,11 @@ REPO_CONFIG = Path(__file__).parent.parent / "feeds.toml"
 
 
 def test_the_repo_config_is_valid():
+    # Only that it builds: the editor's pull requests change feeds.toml and
+    # merge themselves once the checks pass, so a test of what it holds would
+    # block them. The parsing tests below use their own tables.
     conf = load(REPO_CONFIG)
-    feeds = conf.feeds
-    assert conf.digests == [Digest("digest.xml", "Hacker News: daily digest")]
-    assert conf.files == ["frontpage.xml", "best.xml", "top.xml", "digest.xml", "newssite.xml", "techsite.xml"]
-    assert [f.file for f in feeds] == ["frontpage.xml", "best.xml", "top.xml"]
-    assert feeds[0].follows_front_page
-    assert not feeds[1].follows_front_page
-    assert feeds[1].min_points == 100
-    assert feeds[2].ranked and feeds[2].min_points == 150
-    newssite, tech = conf.rss
-    assert newssite.sources == ("https://www.newssite.example/feed",)
-    assert newssite.exclude_categories == {"peanuts", "foto del giorno", "celebrity"}
-    assert newssite.exclude_links[0].search("https://www.newssite.example/episodes/x/")
-    assert not newssite.exclude_links[0].search("https://www.newssite.example/flashes/x/")
-    assert newssite.exclude_titles[0].search("Le prime pagine di oggi")
-    assert newssite.enrich and newssite.max_items == 100 and newssite.dedupe == "link"
-    assert tech.sources[0] == "https://feeds.techsite.example/index"
-    assert len(tech.sources) == 5 and all(s.startswith("https://feeds.techsite.example/") for s in tech.sources)
-    assert tech.exclude_sections == {"policy", "space", "gaming", "cars", "culture"}
-    assert not tech.exclude_categories and not tech.include_sections
-    assert tech.enrich and tech.dedupe == "link"
+    assert conf.files
 
 
 def test_defaults_apply():

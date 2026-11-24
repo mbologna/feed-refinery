@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Feeds editor</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="editor.css" />
+    <script type="module" src="editor.js"></script>
+  </head>
+  <body>
+    <header class="top">
+      <h1>Feeds editor</h1>
+      <p id="runtime" class="runtime" role="status">Starting…</p>
+      <div id="account" class="account" hidden>
+        <span id="who"></span>
+        <button type="button" id="sign-out">Sign out</button>
+      </div>
+    </header>
+
+    <section id="sign-in" class="panel sign-in" aria-labelledby="sign-in-title" hidden>
+      <h2 id="sign-in-title">Sign in with a GitHub token</h2>
+      <p>
+        Paste a <a href="https://github.com/settings/personal-access-tokens/new">fine-grained token</a> for the
+        repository <code>mbologna/feeds</code> only, with <b>Contents</b> and <b>Pull requests</b>
+        read and write. It stays in this browser, for this site only.
+      </p>
+      <form id="token-form">
+        <label for="token">Token</label>
+        <input id="token" type="password" autocomplete="off" spellcheck="false" required />
+        <button type="submit">Sign in</button>
+      </form>
+      <p id="sign-in-error" class="error" role="alert"></p>
+    </section>
+
+    <div id="app" class="app" hidden>
+      <nav class="feeds" aria-labelledby="feeds-title">
+        <h2 id="feeds-title">Feeds</h2>
+        <div id="feed-list"></div>
+        <div class="add">
+          <label for="add-kind">New</label>
+          <select id="add-kind">
+            <option value="rss">RSS feed</option>
+            <option value="feed">Hacker News feed</option>
+            <option value="digest">Hacker News digest</option>
+          </select>
+          <button type="button" id="add">Add</button>
+        </div>
+      </nav>
+
+      <main class="work">
+        <div id="problem" class="problem" role="alert" hidden></div>
+        <section id="editor" aria-live="polite">
+          <p class="hint">Choose a feed to edit, or add one.</p>
+        </section>
+        <section id="preview" class="preview" aria-labelledby="preview-title" hidden>
+          <h2 id="preview-title">Preview</h2>
+          <div id="preview-body"></div>
+        </section>
+      </main>
+
+      <footer class="save-bar">
+        <p id="changes" role="status">No changes.</p>
+        <button type="button" id="review" disabled>Review and save</button>
+      </footer>
+    </div>
+
+    <dialog id="save" aria-labelledby="save-title">
+      <form id="save-form" method="dialog">
+        <h2 id="save-title">Save to GitHub</h2>
+        <p>
+          The change goes through a pull request that merges itself once the checks pass, then the next build publishes
+          it.
+        </p>
+        <h3>feeds.toml</h3>
+        <pre id="diff" class="diff" tabindex="0" aria-label="Changes to feeds.toml"></pre>
+        <label for="message">Commit message</label>
+        <textarea id="message" rows="3" spellcheck="true"></textarea>
+        <p id="message-check" class="check" aria-live="polite"></p>
+        <ol id="steps" class="steps" aria-live="polite"></ol>
+        <div class="buttons">
+          <button type="button" id="cancel">Close</button>
+          <button type="button" id="submit">Open pull request</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

@@ -158,9 +158,11 @@ def build(config_path: Path, output_dir: Path, page_url: str, previous: str, now
     # For outside monitoring: when the build ran and how the feeds look.
     (output_dir / HEALTH_NAME).write_text(json.dumps(health, indent=2) + "\n", encoding="utf-8")
     (output_dir / STATE_NAME).write_bytes(current.to_json())
-    # The icons: the feeds' <image> and the index page's favicon.
+    # The icons: the feeds' <image> and the index page's favicon. The editor,
+    # in site/editor/, is published by CI with the package's wheel.
     for asset in importlib.resources.files("feeds").joinpath("site").iterdir():
-        (output_dir / asset.name).write_bytes(asset.read_bytes())
+        if asset.is_file():
+            (output_dir / asset.name).write_bytes(asset.read_bytes())
     published: list[config.Feed | config.Digest | config.Rss] = [*feeds, *conf.digests, *conf.rss]
     page = render_page([(f, feed_url(page_url, f.file)) for f in published])
     (output_dir / "index.html").write_text(page, encoding="utf-8")
