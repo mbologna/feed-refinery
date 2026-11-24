@@ -36,6 +36,8 @@ An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categ
 - the image: the source's (an image enclosure, `media:content`, `media:thumbnail` or the first `<img>` in its description), else the article page's `og:image`, also as `media:thumbnail`;
 - the excerpt: the source's description as plain text, cut to about 2,000 characters, else the page's description.
 
+Excerpts, here and in HN items, keep their paragraphs. One that's too long ends with its last whole paragraph or sentence when that keeps at least half of it, else at a word, with an ellipsis.
+
 The item's link leads to the article, so the description doesn't repeat it: readers build their preview text from the description. An item with no excerpt gets a link to the article instead, so its description isn't empty.
 
 The article page is fetched only for an item whose source lacks the image or the excerpt, once per item, as for HN stories. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.

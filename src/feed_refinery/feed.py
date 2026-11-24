@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from .config import Digest, Feed, Rss
 from .preview import Preview
 from .state import Entry, RssEntry
+from .text import PARAGRAPH
 
 ATOM = "http://www.w3.org/2005/Atom"
 DC = "http://purl.org/dc/elements/1.1/"
@@ -26,6 +27,14 @@ def domain(url: str | None) -> str | None:
 
 def plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def paragraphs(text: str, lead: str = "", tail: str = "") -> str:
+    """An excerpt as escaped <p> elements, one per paragraph; lead and tail are HTML for the first's start and the last's end."""
+    parts = [escape(p) for p in text.split(PARAGRAPH)]
+    parts[0] = lead + parts[0]
+    parts[-1] += tail
+    return "\n".join(f"<p>{p}</p>" for p in parts)
 
 
 HOT = 4 * 3600  # hackernewsbot's 🔥: at most 4 hours old
@@ -58,14 +67,14 @@ def item_html(entry: Entry, now: int) -> str:
     if source:
         parts.append(f"<p><b>{escape(source)}</b></p>")
     if preview.description:
-        parts.append(f"<p>{escape(preview.description)}</p>")
+        parts.append(paragraphs(preview.description))
         if story.text:  # Show HN and the like: the page and the submitter's own words
-            parts.append(f"<blockquote>{escape(story.text)}</blockquote>")
+            parts.append(f"<blockquote>{paragraphs(story.text)}</blockquote>")
     elif story.text:
-        parts.append(f"<p>{escape(story.text)}</p>")
+        parts.append(paragraphs(story.text))
     if entry.comment:
         c = entry.comment
-        parts.append(f'<p>💬 <b>{escape(c.author)}</b>: {escape(c.text)} <a href="{escape(c.url)}">→</a></p>')
+        parts.append(paragraphs(c.text, f"💬 <b>{escape(c.author)}</b>: ", f' <a href="{escape(c.url)}">→</a>'))
     stats = [f'<a href="{escape(story.url)}">Article</a>'] if story.url else []
     stats.append(f'<a href="{escape(story.comments_url)}">{plural(story.comments, "comment")}</a>')
     stats.append(plural(story.points, "point"))
@@ -127,7 +136,7 @@ def digest_entry_html(rank: int, entry: Entry) -> str:
     text = preview.description or story.text
     if source or text:
         lead = f"<b>{escape(source)}</b>" + (" · " if text else "") if source else ""
-        parts.append(f"<p>{lead}{escape(text or '')}</p>")
+        parts.append(paragraphs(text or "", lead))
     comments = plural(story.comments, "comment")
     parts.append(
         f'<p>{plural(story.points, "point")} · <a href="{escape(story.comments_url)}">{comments}</a>'
@@ -196,7 +205,7 @@ def rss_item_html(entry: RssEntry) -> str:
     if entry.image:
         parts.append(f'<p><img src="{escape(entry.image)}" alt=""></p>')
     if entry.excerpt:
-        parts.append(f"<p>{escape(entry.excerpt)}</p>")
+        parts.append(paragraphs(entry.excerpt))
     elif link := entry.item.link:
         parts.append(f'<p><a href="{escape(link)}">{escape(domain(link) or link)}</a></p>')
     return "\n".join(parts)

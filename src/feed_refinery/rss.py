@@ -21,7 +21,7 @@ import feedparser
 
 from . import USER_AGENT
 from .config import JsonFields, Rss
-from .text import excerpt, plain_text, squash
+from .text import excerpt, plain_paragraphs, plain_text, squash
 
 TIMEOUT = 30
 RETRY_DELAY = 2  # seconds before the one retry after a network error
@@ -40,7 +40,7 @@ class Item:
     published: int | None  # Unix time, from the source; None when it gives no date
     categories: tuple[str, ...]
     author: str
-    summary: str  # the source's description as a plain-text excerpt; empty when it has no text
+    summary: str  # the source's description as a plain-text excerpt, paragraphs kept; empty when it has no text
     image: str | None  # from an enclosure, media:content or media:thumbnail, or the description's first <img>
     # The description's whole plain text, for exclude_text. Only freshly parsed
     # items have it: the state doesn't store it, and two copies of a story are
@@ -172,7 +172,8 @@ def parse_json(body: bytes, base: str, fields: JsonFields) -> list[Item]:
         if not title:
             continue
         html = _at(entry, fields.summary) if fields.summary else None
-        text = plain_text(html)[:TEXT_LIMIT] if isinstance(html, str) else ""
+        prose = plain_paragraphs(html) if isinstance(html, str) else ""
+        text = squash(prose)[:TEXT_LIMIT]
         author = _at(entry, fields.author) if fields.author else None
         image = _at(entry, fields.image) if fields.image else None
         items.append(
@@ -183,7 +184,7 @@ def parse_json(body: bytes, base: str, fields: JsonFields) -> list[Item]:
                 published=_json_date(_at(entry, fields.date), fields.date_format) if fields.date else None,
                 categories=(),
                 author=squash(author) if isinstance(author, str) else "",
-                summary=excerpt(text) if text else "",
+                summary=excerpt(prose),
                 image=_web(image, link) if isinstance(image, str) else None,
                 text=text,
             )
@@ -233,12 +234,12 @@ def _item(entry, base: str) -> Item | None:
     if not guid:
         return None  # nothing to tell it apart by
     html = entry.get("summary") or ""  # feedparser fills it from <content> when the source has no summary
-    text = plain_text(html)[:TEXT_LIMIT] if html else ""
-    summary = excerpt(text) if text else ""
+    prose = plain_paragraphs(html)
+    text = squash(prose)[:TEXT_LIMIT]
     title = entry.get("title") or ""
     if entry.get("title_detail", {}).get("type") in ("text/html", "application/xhtml+xml"):
         title = plain_text(title)
-    title = squash(title) or excerpt(summary, TITLE_LIMIT) or link or guid
+    title = squash(title) or excerpt(text, TITLE_LIMIT) or link or guid
     parsed = entry.get("published_parsed") or entry.get("updated_parsed")
     categories: list[str] = []
     for tag in entry.get("tags", []):
@@ -252,7 +253,7 @@ def _item(entry, base: str) -> Item | None:
         published=calendar.timegm(parsed) if parsed else None,
         categories=tuple(categories),
         author=squash(entry.get("author") or ""),
-        summary=summary,
+        summary=excerpt(prose),
         image=_image(entry, html, link or base),
         text=text,
     )

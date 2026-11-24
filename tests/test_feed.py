@@ -112,7 +112,7 @@ def test_age_line_uses_the_bots_markers(elapsed, line):
 def test_submitter_text_follows_the_page_excerpt():
     entry = Entry(story(text="I built this <alone>"), Preview(description="The page says"))
     html = item_html(entry, CREATED)
-    assert "<p>The page says</p>\n<blockquote>I built this &lt;alone&gt;</blockquote>" in html
+    assert "<p>The page says</p>\n<blockquote><p>I built this &lt;alone&gt;</p></blockquote>" in html
 
 
 def test_submitter_text_stands_in_for_a_missing_excerpt():
@@ -182,6 +182,17 @@ def test_top_comment_line():
         in html
     )
     assert html.index("💬") < html.index("Article")
+
+
+def test_item_keeps_the_paragraphs_of_the_excerpt_the_text_and_the_comment():
+    entry = Entry(
+        story(text="Mine.\n\nAll mine."),
+        Preview(description="The page.\n\nMore of it."),
+        comment=Comment("7", "bob", "First.\n\nSecond."),
+    )
+    html = item_html(entry, CREATED)
+    assert "<p>The page.</p>\n<p>More of it.</p>\n<blockquote><p>Mine.</p>\n<p>All mine.</p></blockquote>" in html
+    assert '<p>💬 <b>bob</b>: First.</p>\n<p>Second. <a href="https://news.ycombinator.com/item?id=7">→</a></p>' in html
 
 
 def test_categories_and_channel_image():
@@ -300,6 +311,11 @@ def test_rss_item_html():
         '<p><img src="https://static.example/chiara.png?w=680&amp;h=453" alt=""></p>\n'
         "<p>Uno &lt;b&gt;due&lt;/b&gt; &amp; tre</p>"
     )
+
+
+def test_rss_item_keeps_the_excerpts_paragraphs():
+    html = rss_item_html(RssEntry(rss_item(summary="Uno.\n\nDue & tre.", image=None), 0))
+    assert html == "<p>Uno.</p>\n<p>Due &amp; tre.</p>"
 
 
 def test_rss_item_without_text_links_to_the_article():

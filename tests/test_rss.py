@@ -512,7 +512,7 @@ def test_parse_json_maps_the_fields():
     assert post.title == "SLES 16.1 is here"
     assert post.link == post.guid == "https://blog.example/blog/sles-16-1/"
     assert post.published == 1_794_268_800  # 2026-11-10 00:00 UTC
-    assert post.summary == post.text == "More choice for the enterprise"
+    assert post.text == "More choice for the enterprise" and post.summary == "More choice\n\nfor the enterprise"
     assert post.author == "Ada Lovelace" and post.image == "https://blog.example/img/a.png"
     assert post.categories == ()
 
