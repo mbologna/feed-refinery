@@ -16,7 +16,7 @@ Each item of an HN feed has:
 
 - the title, linking to the article (Ask HN and other text posts link to the thread);
 - the page's `og:image` (falling back to `twitter:image`, then to the first `<img>` in its `<article>` or `<main>` that isn't declared smaller than 200 pixels), also as `media:thumbnail` for list views;
-- the page's excerpt: its opening paragraphs (inside `<article>` or `<main>` when it has one, from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 2,000 characters;
+- the page's excerpt: its opening paragraphs (inside the first `<article>` or `<main>` that has any, when it has one: a later one holds related stories, teasers or comments; from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 2,000 characters;
 - the submitter's own text, for Show HN and other posts that have some, quoted below the page's description (or in its place);
 - the top comment, as HN ranks it, cut to about 2,000 characters, with a link to it;
 - a last line with the article's link, labelled with its site name (or domain), its reading time, a link to the HN thread with the comment count, the points, and the story's age and author, as `Example · 8 min read · 37 comments · 150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
@@ -25,7 +25,7 @@ Each item of an HN feed has:
 
 Each feed carries an icon (`<image>`), so readers show one next to its name.
 
-The reading time counts the words of the article's paragraphs at 230 a minute, or of the post's own text for Ask HN and other text posts. It's left out under 200 words (usually a page its scripts fill in, or a short question) and for a page that says it's paywalled, where only the lede is there to count. Pages read before word counting began are read again, at most 100 a build, so older items get one too; a page that fails then keeps its preview without one.
+The reading time counts the words of the article's paragraphs at 230 a minute, or of the post's own text for Ask HN and other text posts. It's left out under 200 words (usually a page its scripts fill in, or a short question) and for a page that says it's paywalled, where only the lede is there to count. Pages read before word counting began, or before the count stopped at the first `<article>` or `<main>`, are read again, at most 100 a build, so older items get a right one too; a page that fails then keeps its preview without one.
 
 The counts are a snapshot from when the item was built. A page that blocks bots (`403`), times out or isn't HTML gets an item without the image and excerpt.
 
