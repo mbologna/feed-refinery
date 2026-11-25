@@ -14,12 +14,12 @@ It's an engine: it builds whatever feeds a `feeds.toml` lists, and [`examples/fe
 
 Each item of an HN feed has:
 
-- the title, linking to the article (Ask HN and other text posts link to the thread);
+- the title, linking to the article (Ask HN and other text posts link to the thread), after dots for its reading time: `●○○` up to 3 minutes, `●●○` up to 7, `●●●` longer, none when it's unknown. Dots, not a red-to-green light: a long article isn't one to skip;
 - the page's `og:image` (falling back to `twitter:image`, then to the first `<img>` in its `<article>` or `<main>` that isn't declared smaller than 200 pixels), also as `media:thumbnail` for list views;
 - the page's excerpt: its opening paragraphs (inside the first `<article>` or `<main>` that has any, when it has one: a later one holds related stories, teasers or comments; from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 2,000 characters;
 - the submitter's own text, for Show HN and other posts that have some, quoted below the page's description (or in its place);
 - the top comment, as HN ranks it, cut to about 2,000 characters, with a link to it;
-- a last line with the article's link, labelled with its site name (or domain), its reading time, a link to the HN thread with the comment count, the points, and the story's age and author, as `Example · 8 min read · 37 comments · 150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
+- a last line with the article's link, labelled with its site name (or domain), a link to the HN thread with the comment count, the points, and the story's age and author, as `Example · 37 comments · 150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
 - `<comments>` set to the HN thread, as in hnrss;
 - `<category>` tags with the post kind (Show HN, Ask HN, Launch HN, Tell HN) and the linked domain, for reader filters and rules.
 
@@ -40,13 +40,13 @@ An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categ
 
 Excerpts, here and in HN items, keep their paragraphs. One that's too long ends with its last whole paragraph or sentence when that keeps at least half of it, else at a word, with an ellipsis.
 
-A last line links to the article, labelled with its site name (or domain), with its reading time and its points on HN when known. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`), else from the article page, as for HN items; a description alone says nothing of the article's length. Readers build an item's preview text from the start of its description, and the item's own link already leads to the article, so the line is left out after an excerpt of up to 500 characters when it has nothing to add. An item with no excerpt always gets it, so its description isn't empty.
+The title shows the reading time as dots, as in HN items. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`), else from the article page, as for HN items; a description alone says nothing of the article's length. A last line gives the story's points on HN, when known. The title already links to the article, so the body links to it, labelled with its site name (or domain), only when it would otherwise be empty.
 
 The article page is fetched once per item, as for HN stories, unless the source has the image, more than a teaser (500 characters of text) and the whole article, which gives the reading time: in practice, for every item of a source without full content. Without `enrich`, only items with full content get a reading time. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
 
 ## Reading in NetNewsWire
 
-NetNewsWire, and Feedly when it syncs it, takes an item's body from its description and shows its first 300 characters, as plain text, in the timeline. Items start with the excerpt, so those characters are the article's opening; the site, reading time and counts come last. The image doubles as `media:content` and `media:thumbnail`, which give the timeline its thumbnail and Feedly its visual, and the article view doesn't repeat it.
+NetNewsWire, and Feedly when it syncs it, takes an item's body from its description and shows its first 300 characters, as plain text, in the timeline. Items start with the excerpt, so those characters are the article's opening; the counts come last, and the reading time is in the title. The image doubles as `media:content` and `media:thumbnail`, which give the timeline its thumbnail and Feedly its visual, and the article view doesn't repeat it.
 
 ## Feeds
 
@@ -64,7 +64,7 @@ A `feeds.toml` lists the feeds; [`examples/feeds.toml`](examples/feeds.toml) has
 - `site`: the website the feed is about (default `https://news.ycombinator.com/`). It is the channel's `<link>`, which Feedly takes a feed's icon from, so each feed shows its source's icon rather than one shared by every feed here.
 - `icon`: the channel's `<image>`, for readers that show it (default the site's `/favicon.ico`).
 
-Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its image, the first paragraph of its excerpt (up to about 500 characters), its counts and reading time:
+Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its reading time as dots before its title, its image, the first paragraph of its excerpt (up to about 500 characters) and its counts:
 
 - `file`, `title`: as for a feed.
 - `top`: stories per day (default 20).
