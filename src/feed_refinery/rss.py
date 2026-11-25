@@ -21,7 +21,7 @@ import feedparser
 
 from . import USER_AGENT
 from .config import JsonFields, Rss
-from .text import excerpt, pixels, plain_paragraphs, plain_text, squash
+from .text import excerpt, holds_all, pixels, plain_paragraphs, plain_text, squash
 
 TIMEOUT = 30
 RETRY_DELAY = 2  # seconds before the one retry after a network error
@@ -50,6 +50,12 @@ class Item:
     # The words of the source's full content (content:encoded, Atom <content>);
     # None when it gives only a description, which says nothing of the article's length.
     words: int | None = None
+
+    @property
+    def has_article(self) -> bool:
+        """Whether the full content is the whole article: more than its excerpt shows. Content that fits in the
+        excerpt may be the teaser again, as some sources repeat their description in content:encoded."""
+        return bool(self.words) and not holds_all(self.summary, self.words or 0)
 
     @property
     def permalink(self) -> bool:

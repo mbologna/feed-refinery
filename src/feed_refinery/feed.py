@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from .config import Digest, Feed, Rss
 from .preview import Preview
 from .state import Entry, RssEntry
-from .text import PARAGRAPH, excerpt
+from .text import PARAGRAPH, excerpt, holds_all
 
 ATOM = "http://www.w3.org/2005/Atom"
 DC = "http://purl.org/dc/elements/1.1/"
@@ -41,7 +41,6 @@ HOT = 4 * 3600  # hackernewsbot's 🔥: at most 4 hours old
 COLD = 2 * 86400  # and its ❄️: at least 2 days old
 WORDS_PER_MINUTE = 230
 READING_MIN = 200  # words: fewer usually means a page its scripts fill in, or only the lede
-WHOLE = 0.9  # of a post's words in its excerpt: the excerpt is all of it, but captions and bylines
 DIGEST_LIMIT = 500  # characters of each story's text in a digest, a list to scan
 
 
@@ -64,7 +63,7 @@ def age_line(created: int, now: int) -> str:
 def reading_minutes(words: int | None, preview: Preview | None, shown: str) -> int | None:
     """Minutes the post takes to read; None when shown, the excerpt an item shows of it, is all of it, or when its
     page has too few words to tell, or says it's paywalled."""
-    if not words or words < READING_MIN or (preview and preview.paywalled) or len(shown.split()) >= WHOLE * words:
+    if not words or words < READING_MIN or (preview and preview.paywalled) or holds_all(shown, words):
         return None
     return max(1, round(words / WORDS_PER_MINUTE))
 

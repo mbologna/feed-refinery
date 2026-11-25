@@ -88,7 +88,8 @@ class RssEntry:
 
     @property
     def words(self) -> int | None:
-        return self.item.words or (self.preview.words if self.preview else None)
+        """The larger of the source's count and the page's: a source's content may be only a teaser."""
+        return max(self.item.words or 0, (self.preview.words if self.preview else None) or 0) or None
 
     @property
     def excerpt(self) -> str | None:
@@ -440,7 +441,8 @@ def fetch_rss_previews(
     """Fetch the previews of the enriched feeds' items, with the stories' retry rules, and recount some old ones' words.
 
     An item's page is fetched unless its source has the image, more than a
-    teaser and the whole article, whose words give the reading time. With
+    teaser and the whole article, whose words give the reading time: content
+    longer than its excerpt, as content the excerpt holds may be a teaser. With
     exclude_paywalled every item's page is fetched: it says whether the item
     is paywalled.
     """
@@ -452,12 +454,12 @@ def fetch_rss_previews(
         for entry in state.rss.get(feed.file, RssFeed()).items.values():
             item, link = entry.item, entry.item.link
             if entry.preview is not None:
-                if link and entry.preview.words is None and item.words is None:
+                if link and entry.preview.words is None and not item.has_article:
                     recount.setdefault(link, []).append(entry)
                 continue
             if entry.attempts >= MAX_ATTEMPTS:
                 continue
-            complete = item.image and len(item.summary) >= TEASER and item.words
+            complete = item.image and len(item.summary) >= TEASER and item.has_article
             if link and (feed.exclude_paywalled or not complete):
                 todo.setdefault(link, []).append(entry)
             else:

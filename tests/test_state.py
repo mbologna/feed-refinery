@@ -748,11 +748,27 @@ def test_version_5_stories_load_with_their_words_unknown():
     assert State.from_json(old).stories["1"].story == story(1, url=None)
 
 
+def test_an_items_content_that_fits_in_its_excerpt_may_be_a_teaser_so_its_page_is_read():
+    teaser = "Text. " * (TEASER // 5)  # the source's content:encoded repeats its description
+    fresh = RssEntry(item(1, image="https://i.example/1.png", summary=teaser, words=100), NOW)
+    old = RssEntry(item(2, image="https://i.example/2.png", summary=teaser, words=100), NOW, Preview())
+    state = rss_state(fresh, old)
+    asked = []
+
+    def fetch(url):
+        asked.append(url)
+        return Preview(words=1200)
+
+    assert fetch_rss_previews(state, [NEWS], fetch) == (2, [])
+    assert sorted(asked) == ["https://news.example/1", "https://news.example/2"]
+    assert fresh.words == old.words == 1200
+
+
 def test_words_survive_a_round_trip():
     entry = RssEntry(item(1, words=900), NOW, Preview(words=1200))
     state = rss_state(entry)
     loaded = State.from_json(state.to_json()).rss["news.xml"].items["https://news.example/1"]
-    assert (loaded.item.words, loaded.preview.words, loaded.words) == (900, 1200, 900)
+    assert (loaded.item.words, loaded.preview.words, loaded.words) == (900, 1200, 1200)  # the larger
 
 
 @pytest.mark.parametrize(
