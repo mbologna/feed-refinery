@@ -6,6 +6,7 @@ import re
 from html.parser import HTMLParser
 
 EXCERPT_LIMIT = 2000
+WHOLE = 0.9  # of a text's words in an excerpt that is all of it, but captions and bylines
 PARAGRAPH = "\n\n"  # between an excerpt's paragraphs
 BLANK_LINE = re.compile(r"\n\s*\n")
 # A sentence's last character, with any closing quotes or brackets, before a space.
@@ -59,6 +60,11 @@ def squash(text: str) -> str:
 
 def _paragraphs(text: str) -> str:
     return PARAGRAPH.join(p for p in map(squash, BLANK_LINE.split(text)) if p)
+
+
+def holds_all(shown: str, words: int) -> bool:
+    """Whether shown, an excerpt, is all of a text of that many words."""
+    return len(shown.split()) >= WHOLE * words
 
 
 def excerpt(text: str, limit: int = EXCERPT_LIMIT) -> str:

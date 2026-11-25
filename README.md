@@ -26,7 +26,7 @@ Each item of an HN feed has:
 
 Each feed carries an icon (`<image>`), so readers show one next to its name.
 
-The reading time counts the words of the article's paragraphs at 230 a minute, or of the whole of the post's own text for Ask HN and other text posts. It's left out when the excerpt shown holds at least 90% of those words, as it's then the whole post less its captions and bylines; under 200 words (usually a page its scripts fill in); and for a page that says it's paywalled, where only the lede is there to count. Pages read before word counting began, or before the count stopped at the first `<article>` or `<main>`, are read again, at most 100 a build, so older items get a right one too; a page that fails then keeps its preview without one.
+The reading time counts the words of the article's paragraphs at 230 a minute, or of the whole of the post's own text for Ask HN and other text posts. It's left out when the excerpt shown holds at least 90% of those words, as it's then the whole post less its captions and bylines; under 200 words (usually a page its scripts fill in); and for a page that says it's paywalled, where only the lede is there to count. Pages read before word counting began, or before the count stopped at the first `<article>` or `<main>`, are read again, at most 100 a build, so older items get a right one too; a page that fails is tried again on the next builds, as a first fetch is, and after 3 failures (or at once for a permanent error such as `404`) keeps its preview without one.
 
 The counts are a snapshot from when the item was built. A page that blocks bots (`403`), times out or isn't HTML gets an item without the image and excerpt.
 
@@ -41,9 +41,9 @@ An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categ
 
 Excerpts, here and in HN items, keep their paragraphs. One that's too long ends with its last whole paragraph or sentence when that keeps at least half of it, else at a word, with an ellipsis.
 
-A line after the excerpt gives the reading time and the story's points on HN, when known. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`), else from the article page, as for HN items; a description alone says nothing of the article's length. As in HN items, it's left out when the excerpt is the whole post. The title already links to the article, so that line links to it, labelled with its site name (or domain), only when the item has neither image nor excerpt.
+A line after the excerpt gives the reading time and the story's points on HN, when known. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`) when that's longer than its excerpt, else from the article page, as for HN items: content the excerpt holds may be the teaser again, which some sources repeat there, so the larger count wins; a description alone says nothing of the article's length. As in HN items, it's left out when the excerpt is the whole post. The title already links to the article, so that line links to it, labelled with its site name (or domain), only when the item has neither image nor excerpt.
 
-The article page is fetched once per item, as for HN stories, unless the source has the image, more than a teaser (500 characters of text) and the whole article, which gives the reading time: in practice, for every item of a source without full content. Without `enrich`, only items with full content get a reading time. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
+The article page is fetched once per item, as for HN stories, unless the source has the image, more than a teaser (500 characters of text) and the whole article (full content longer than its excerpt), which gives the reading time: in practice, for every item of a source without full content. Without `enrich`, only items with full content get a reading time. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
 
 ## Reading in NetNewsWire
 

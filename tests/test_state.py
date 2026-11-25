@@ -245,12 +245,32 @@ def test_old_previews_are_fetched_again_for_their_words_a_few_per_build(monkeypa
     # Every new story, and RECOUNTS old ones; never one already counted or without a page.
     assert sorted(asked) == ["https://example.com/new", "https://example.com/o0", "https://example.com/o1"]
     assert state.stories["o0"].preview == Preview(image="https://i.example/fresh.png", words=700)
-    # A failed recount keeps the preview, counted as having no words so it isn't tried again.
-    assert state.stories["o1"].preview == Preview(image="https://i.example/1.png", words=0)
-    assert state.stories["o1"].attempts == 0
+    # A failed recount keeps the preview, and is tried again on the next build, as a first fetch is.
+    assert state.stories["o1"].preview == Preview(image="https://i.example/1.png")
+    assert state.stories["o1"].attempts == 1
     asked.clear()
     fetch_previews(state, fetch)
-    assert asked == ["https://example.com/o2"]
+    assert sorted(asked) == ["https://example.com/o1", "https://example.com/o2"]
+    for _ in range(MAX_ATTEMPTS - 2):
+        fetch_previews(state, fetch)
+    # After MAX_ATTEMPTS, counted as having no words, so it isn't tried again.
+    assert state.stories["o1"].preview == Preview(image="https://i.example/1.png", words=0)
+    asked.clear()
+    fetch_previews(state, fetch)
+    assert asked == []
+
+
+def test_a_recount_gives_up_at_once_on_a_permanent_error_and_a_success_clears_the_attempts():
+    state = State(stories={"gone": Entry(story("gone"), Preview()), "flaky": Entry(story("flaky"), Preview(), 2)})
+
+    def fetch(url):
+        if url.endswith("/gone"):
+            raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
+        return Preview(words=700)
+
+    fetch_previews(state, fetch)
+    assert state.stories["gone"].preview == Preview(words=0)
+    assert (state.stories["flaky"].preview.words, state.stories["flaky"].attempts) == (700, 0)
 
 
 def test_rss_items_are_fetched_for_their_words_and_old_ones_recounted():
@@ -748,11 +768,35 @@ def test_version_5_stories_load_with_their_words_unknown():
     assert State.from_json(old).stories["1"].story == story(1, url=None)
 
 
+def test_version_6_previews_load_with_a_failed_recounts_words_unknown():
+    entry = RssEntry(item(1), NOW, Preview(description="D", words=0))
+    current = rss_state(entry).to_json()
+    old = current.replace(f'"version":{VERSION}'.encode(), b'"version":6')
+    assert State.from_json(old).rss["news.xml"].items["https://news.example/1"].preview.words is None
+    assert State.from_json(current).rss["news.xml"].items["https://news.example/1"].preview.words == 0
+
+
+def test_an_items_content_that_fits_in_its_excerpt_may_be_a_teaser_so_its_page_is_read():
+    teaser = "Text. " * (TEASER // 5)  # the source's content:encoded repeats its description
+    fresh = RssEntry(item(1, image="https://i.example/1.png", summary=teaser, words=100), NOW)
+    old = RssEntry(item(2, image="https://i.example/2.png", summary=teaser, words=100), NOW, Preview())
+    state = rss_state(fresh, old)
+    asked = []
+
+    def fetch(url):
+        asked.append(url)
+        return Preview(words=1200)
+
+    assert fetch_rss_previews(state, [NEWS], fetch) == (2, [])
+    assert sorted(asked) == ["https://news.example/1", "https://news.example/2"]
+    assert fresh.words == old.words == 1200
+
+
 def test_words_survive_a_round_trip():
     entry = RssEntry(item(1, words=900), NOW, Preview(words=1200))
     state = rss_state(entry)
     loaded = State.from_json(state.to_json()).rss["news.xml"].items["https://news.example/1"]
-    assert (loaded.item.words, loaded.preview.words, loaded.words) == (900, 1200, 900)
+    assert (loaded.item.words, loaded.preview.words, loaded.words) == (900, 1200, 1200)  # the larger
 
 
 @pytest.mark.parametrize(
