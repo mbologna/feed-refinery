@@ -270,12 +270,22 @@ def publish(output_dir: Path, config_path: Path, now: dt.datetime) -> int:
     except kv.KvError as e:
         print(f"publish failed: {e}", file=sys.stderr)
         return 1
+    whose = {"account": "account", "build": "this build's", "estimate": "estimated account"}[done.scope]
     print(
-        f"kv: {done.written} written, {done.unchanged} unchanged, {done.deleted} deleted; "
-        f"{done.writes_today} of {kv.DAILY_WRITES} writes today"
+        f"kv: {done.written} written, {done.unchanged} unchanged, {done.deferred} deferred, {done.deleted} deleted; "
+        f"{done.account} of {kv.DAILY_WRITES} {whose} writes today, mode {done.mode}"
     )
-    if done.guard:
-        print(f"::warning::write guard on: {plural(done.deferred, 'count-only refresh')} skipped until 00:00 UTC")
+    if done.analytics_error:
+        print(f"::warning::{done.analytics_error}: the budget counts this build's writes and the others' last rate")
+    if done.quota:
+        print("publish stopped: KV's daily write limit reached; the feeds keep their last version", file=sys.stderr)
+        return 1
+    if done.mode == "items":
+        print(f"::warning::KV budget tight: {plural(done.deferred, 'changed feed')} left for a later run")
+    elif done.mode == "frozen":
+        print("::warning::KV budget spent: no feed written, only the state, until 00:00 UTC")
+    elif done.mode == "none":
+        print("::warning::KV budget spent: nothing written until 00:00 UTC")
     return 0
 
 

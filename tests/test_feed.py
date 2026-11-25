@@ -16,7 +16,8 @@ from feed_refinery.feed import (
     domain,
     item_html,
     last_build_date,
-    reading_time,
+    marked,
+    reading_minutes,
     render_digest,
     render_feed,
     render_rss_feed,
@@ -196,37 +197,52 @@ def test_item_keeps_the_paragraphs_of_the_excerpt_the_text_and_the_comment():
 
 
 @pytest.mark.parametrize(
-    ("words", "preview", "line"),
+    ("words", "preview", "minutes"),
     [
         (None, None, None),
         (199, None, None),  # too few words to tell: a page its scripts fill in, or only the lede
-        (200, None, "1 min read"),
-        (2300, Preview(), "10 min read"),
+        (200, None, 1),
+        (2300, Preview(), 10),
         (2300, Preview(paywalled=True), None),  # the count covers only what the paywall lets through
     ],
 )
-def test_reading_time(words, preview, line):
-    assert reading_time(words, preview) == line
+def test_reading_minutes(words, preview, minutes):
+    assert reading_minutes(words, preview) == minutes
 
 
-def test_item_shows_the_reading_time_after_the_article_link():
+@pytest.mark.parametrize(
+    ("minutes", "title"),
+    [(None, "T"), (1, "●○○ T"), (3, "●○○ T"), (4, "●●○ T"), (7, "●●○ T"), (8, "●●● T"), (40, "●●● T")],
+)
+def test_marked_titles_show_the_reading_time_as_dots(minutes, title):
+    assert marked("T", minutes) == title
+
+
+def test_an_items_reading_time_is_in_its_title_not_its_body():
     entry = Entry(story(), Preview(description="Text", site_name="Example", words=1150))
-    html = item_html(entry, CREATED)
-    assert '">Example</a> · 5 min read · <a href="https://news.ycombinator.com/item?id=42">37 comments</a>' in html
+    _, root = render([(entry, CREATED)])
+    item = root.find("channel/item")
+    assert item.findtext("title") == '●●○ Rust & "C" <compared>'
+    html = item.findtext("description")
+    assert '">Example</a> · <a href="https://news.ycombinator.com/item?id=42">37 comments</a>' in html
     assert html.startswith("<p>Text</p>")  # what readers show in a list
+    _, root = render([(Entry(story(), Preview(description="Text")), CREATED)])
+    assert root.findtext("channel/item/title") == 'Rust & "C" <compared>'  # unknown: no dots
 
 
 def test_a_text_posts_reading_time_is_its_texts():
-    html = item_html(Entry(story(url=None, text="word " * 460), Preview()), CREATED)
-    assert '2 min read · <a href="https://news.ycombinator.com/item?id=42">37 comments</a>' in html
-    assert "min read" not in item_html(Entry(story(url=None, text="Short question?"), Preview()), CREATED)
+    _, root = render([(Entry(story(url=None, text="word " * 460), Preview()), CREATED)])
+    assert root.findtext("channel/item/title").startswith("●○○ Rust")
+    _, root = render([(Entry(story(url=None, text="Short question?"), Preview()), CREATED)])
+    assert root.findtext("channel/item/title").startswith("Rust")
 
 
-def test_digest_lines_show_the_reading_time():
+def test_digest_headings_show_the_reading_time():
     entry = Entry(story(), Preview(description="Desc", words=1150))
     doc = render_digest(Digest("d.xml", "D"), [(dt.date(2026, 11, 18), [entry])], "u", NOW)
     html = ET.fromstring(doc).find("channel/item").findtext("description")
-    assert "37 comments</a> · by pg · 5 min read</p>" in html
+    assert '<h3>1. ●●○ <a href="https://www.example.com/post?a=1&amp;b=2">Rust &amp; ' in html
+    assert "37 comments</a> · by pg</p>" in html
 
 
 def test_categories_and_channel_image():
@@ -364,16 +380,20 @@ def test_rss_item_keeps_the_excerpts_paragraphs():
     assert html == "<p>Uno.</p>\n<p>Due &amp; tre.</p>"
 
 
-def test_rss_item_ends_with_the_site_and_facts_when_they_say_something():
-    with_facts = RssEntry(rss_item(words=920), 0, Preview(site_name="News Site"), hn_points=312)
-    assert rss_item_html(with_facts).endswith(
-        f'<p><a href="{LINK}">News Site</a> · 4 min read · 312 points on Hacker News</p>'
-    )
-    # After an excerpt too long for a reader's preview text, the link alone.
+def test_rss_item_ends_with_its_points_on_hn_and_never_links_the_article_again():
+    with_points = RssEntry(rss_item(words=920), 0, Preview(site_name="News Site"), hn_points=312)
+    assert rss_item_html(with_points).endswith("</p>\n<p>312 points on Hacker News</p>")
     long = RssEntry(rss_item(summary="Parola " * 80, image=None), 0)
-    assert rss_item_html(long).endswith(f'</p>\n<p><a href="{LINK}">newssite.example</a></p>')
-    # After a short one, with no facts, nothing: the line would end the preview text.
-    assert "<a " not in rss_item_html(RssEntry(rss_item(), 0))
+    assert "<a " not in rss_item_html(with_points) + rss_item_html(long)  # the title links to it
+
+
+def test_rss_titles_show_the_reading_time():
+    _, root = render_rss([RssEntry(rss_item(words=920), 0), RssEntry(rss_item(guid="g2"), 0, Preview(words=3000))])
+    titles = [t.text for t in root.findall("channel/item/title")]
+    assert titles == [
+        "●●○ Cosa dice il film del “pandorogate” & <altro>",
+        "●●● Cosa dice il film del “pandorogate” & <altro>",
+    ]
 
 
 def test_rss_item_without_text_links_to_the_article():

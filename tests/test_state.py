@@ -601,7 +601,7 @@ def test_version_1_state_loads_with_no_rss_feeds_and_keeps_the_rest():
     assert state.stories["1"].preview == Preview("https://e.example/i.png", "D", None)
     assert state.stories["1"].comment_checked == 7
     assert state.feeds == {"f.xml": {"1": 100}} and state.digests == {"d.xml": {"2026-11-18": ["1"]}}
-    assert b'"version":4' in state.to_json()
+    assert b'"version":5' in state.to_json()
 
 
 def rss_state(*entries, file="news.xml"):
@@ -729,6 +729,15 @@ def test_version_3_items_and_previews_load_with_their_words_unknown():
     state = State.from_json(old)
     assert state.stories["1"].preview.words is None
     assert state.rss["r.xml"].items["https://news.example/1"].words is None
+
+
+def test_version_4_previews_load_with_their_words_unknown_so_their_pages_are_read_again():
+    entry = RssEntry(item(1, words=900), NOW, Preview(description="D", words=1200))
+    current = rss_state(entry).to_json()
+    old = current.replace(b'"version":5', b'"version":4')
+    loaded = State.from_json(old).rss["news.xml"].items["https://news.example/1"]
+    assert (loaded.item.words, loaded.preview.description, loaded.preview.words) == (900, "D", None)
+    assert State.from_json(current).rss["news.xml"].items["https://news.example/1"].preview.words == 1200
 
 
 def test_words_survive_a_round_trip():

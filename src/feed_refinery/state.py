@@ -28,9 +28,12 @@ from .source import Story
 # 2 added the rss section; a version 1 file loads with it empty. 3 added the
 # items' hn_points and hn_checked, the previews' paywalled and the feeds'
 # filters; a version 2 file loads with them unknown. 4 added the items' and
-# the previews' words; a version 3 file loads with them unknown.
-VERSION = 4
-READABLE = (1, 2, 3, 4)
+# the previews' words; a version 3 file loads with them unknown. 5 reads the
+# previews again: their excerpts and words took in the related-article cards
+# after a page's article, so a version 4 file loads with the previews' words
+# unknown, which fetches each page again, a few a build.
+VERSION = 5
+READABLE = (1, 2, 3, 4, 5)
 MAX_ATTEMPTS = 3  # preview fetches per story before giving up on it
 COMMENT_INTERVAL = 2 * 3600  # how often a listed story's top comment is looked up again
 RETRY_STATUSES = {408, 429}  # client errors worth another try; other 4xx won't change
@@ -160,12 +163,13 @@ class State:
         """Raises ValueError on anything that isn't a state file of a version this code reads."""
         try:
             data = json.loads(raw)
-            if data.get("version") not in READABLE:
-                raise ValueError(f"state version {data.get('version')!r}, expected one of {READABLE}")
+            version = data.get("version")
+            if version not in READABLE:
+                raise ValueError(f"state version {version!r}, expected one of {READABLE}")
             stories = {
                 sid: Entry(
                     story=Story(**e["story"]),
-                    preview=Preview(**e["preview"]) if e["preview"] is not None else None,
+                    preview=_preview(e["preview"], version),
                     attempts=int(e["attempts"]),
                     # Added after the first release: absent from older state files.
                     comment=Comment(**e["comment"]) if e.get("comment") else None,
@@ -180,13 +184,20 @@ class State:
                 for f, days in data.get("digests", {}).items()
             }
             # Version 2: absent from version 1 files, which had no RSS feeds.
-            rss = {file: _rss_feed(feed) for file, feed in data.get("rss", {}).items()}
+            rss = {file: _rss_feed(feed, version) for file, feed in data.get("rss", {}).items()}
         except (AttributeError, KeyError, TypeError) as e:
             raise ValueError(f"malformed state: {e!r}") from e
         return cls(stories, feeds, digests, rss)
 
 
-def _rss_feed(data: dict) -> RssFeed:
+def _preview(data: dict | None, version: int) -> Preview | None:
+    if data is None:
+        return None
+    preview = Preview(**data)
+    return replace(preview, words=None) if version < 5 else preview  # see VERSION
+
+
+def _rss_feed(data: dict, version: int) -> RssFeed:
     sources = {url: Source(**s) for url, s in data["sources"].items()}
     items = {}
     for key, e in data["items"].items():
@@ -194,7 +205,7 @@ def _rss_feed(data: dict) -> RssFeed:
         items[key] = RssEntry(
             item=Item(**{**fields, "categories": tuple(fields["categories"])}),
             first_seen=int(e["first_seen"]),
-            preview=Preview(**e["preview"]) if e["preview"] is not None else None,
+            preview=_preview(e["preview"], version),
             attempts=int(e["attempts"]),
             from_sources=[str(s) for s in e["from_sources"]],
             # Version 3: absent from version 2 files.

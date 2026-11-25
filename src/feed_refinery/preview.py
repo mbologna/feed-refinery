@@ -42,11 +42,12 @@ JSON_LD = "application/ld+json"
 class _PageParser(HTMLParser):
     """Collects <meta property|name=... content=...> up to the end of <head>, and the opening paragraphs.
 
-    The paragraphs are the page's opening: those inside <article> or <main>,
-    else those anywhere, outside navigation, headers, footers, captions and
-    scripts, from the first of at least PARAGRAPH_MIN characters, up to
-    EXCERPT_LIMIT characters in all. The first <img> inside <article> or
-    <main> stands in for a missing og:image.
+    The paragraphs are the page's opening: those inside the first <article>
+    or <main> that has any, else those anywhere, outside navigation, headers,
+    footers, captions and scripts, from the first of at least PARAGRAPH_MIN
+    characters, up to EXCERPT_LIMIT characters in all. A later <article> or
+    <main> is the page's related links, teasers or comments, not the article.
+    The first <img> inside <article> or <main> stands in for a missing og:image.
     """
 
     def __init__(self) -> None:
@@ -60,6 +61,7 @@ class _PageParser(HTMLParser):
         self.content_paragraphs: list[str] = []  # those inside CONTENT elements
         self.words = 0  # in every paragraph
         self.content_words = 0  # in those inside CONTENT elements
+        self.content_done = False  # a CONTENT element with paragraphs has closed: later ones aren't the article
         self.content_image: str | None = None  # the first <img> inside CONTENT elements, as written
         self.json_ld: list[str] = []  # the text of each <script type="application/ld+json">
         self.ld_buffer: list[str] | None = None
@@ -104,6 +106,11 @@ class _PageParser(HTMLParser):
         elif tag in CONTENT:
             self._close_paragraph()
             self.content = max(0, self.content - 1)
+            if not self.content:
+                if self.content_paragraphs:
+                    self.content_done = True
+                else:  # only short text, a card or a byline: the article is further on
+                    self.content_words = 0
         elif tag == "p":
             self._close_paragraph()
 
@@ -121,7 +128,7 @@ class _PageParser(HTMLParser):
         words = len(text.split())
         self.words += words
         _keep(self.paragraphs, text)
-        if self.content:
+        if self.content and not self.content_done:
             self.content_words += words
             _keep(self.content_paragraphs, text)
 

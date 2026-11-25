@@ -41,9 +41,10 @@ HOT = 4 * 3600  # hackernewsbot's 🔥: at most 4 hours old
 COLD = 2 * 86400  # and its ❄️: at least 2 days old
 WORDS_PER_MINUTE = 230
 READING_MIN = 200  # words: fewer usually means a page its scripts fill in, or only the lede
-# Characters of text: more than readers show of an item in a list (NetNewsWire
-# shows 300), so a line after a longer excerpt stays out of that preview.
-PREVIEW_TEXT = 500
+# Before an item's title, how long it takes to read: up to 3 minutes, up to 7,
+# longer. Dots, not a colour: a long article isn't one to skip.
+LENGTHS = ((3, "●○○"), (7, "●●○"))
+LONG_READ = "●●●"
 DIGEST_LIMIT = 500  # characters of each story's text in a digest, a list to scan
 
 
@@ -63,25 +64,34 @@ def age_line(created: int, now: int) -> str:
     return marker + ago(elapsed)
 
 
-def reading_time(words: int | None, preview: Preview | None) -> str | None:
-    """How long the article takes to read; None when its page has too few words to tell, or says it's paywalled."""
+def reading_minutes(words: int | None, preview: Preview | None) -> int | None:
+    """Minutes the article takes to read; None when its page has too few words to tell, or says it's paywalled."""
     if not words or words < READING_MIN or (preview and preview.paywalled):
         return None
-    return f"{max(1, round(words / WORDS_PER_MINUTE))} min read"
+    return max(1, round(words / WORDS_PER_MINUTE))
 
 
-def story_reading_time(entry: Entry) -> str | None:
+def story_reading_minutes(entry: Entry) -> int | None:
     """The linked article's reading time, or for a text post (Ask HN and the like) its text's."""
     if entry.story.url:
-        return reading_time(entry.preview.words if entry.preview else None, entry.preview)
-    return reading_time(len(entry.story.text.split()), None)
+        return reading_minutes(entry.preview.words if entry.preview else None, entry.preview)
+    return reading_minutes(len(entry.story.text.split()), None)
+
+
+def marked(title: str, minutes: int | None) -> str:
+    """The title after dots for its reading time, as "●●○ Title"; the title alone when that's unknown."""
+    if minutes is None:
+        return title
+    dots = next((d for limit, d in LENGTHS if minutes <= limit), LONG_READ)
+    return f"{dots} {title}"
 
 
 def item_html(entry: Entry, now: int) -> str:
-    """The item body: image, excerpt, the submitter's text, the top comment, then links, reading time, counts and age.
+    """The item body: image, excerpt, the submitter's text, the top comment, then links, counts and age.
 
     The body starts with the text, which readers show of an item in a list;
-    the article's link, labelled with its site, comes last.
+    the article's link, labelled with its site, comes last. The reading time
+    is in the title.
     """
     story, preview = entry.story, entry.preview or Preview()
     parts = []
@@ -98,8 +108,6 @@ def item_html(entry: Entry, now: int) -> str:
         parts.append(paragraphs(c.text, f"💬 <b>{escape(c.author)}</b>: ", f' <a href="{escape(c.url)}">→</a>'))
     source = preview.site_name or domain(story.url) or "Article"
     stats = [f'<a href="{escape(story.url)}">{escape(source)}</a>'] if story.url else []
-    if minutes := story_reading_time(entry):
-        stats.append(minutes)
     stats.append(f'<a href="{escape(story.comments_url)}">{plural(story.comments, "comment")}</a>')
     stats.append(plural(story.points, "point"))
     age = age_line(story.created, now)
@@ -154,7 +162,8 @@ def digest_entry_html(rank: int, entry: Entry) -> str:
     story, preview = entry.story, entry.preview or Preview()
     link = story.url or story.comments_url
     source = preview.site_name or domain(story.url)
-    parts = [f'<h3>{rank}. <a href="{escape(link)}">{escape(story.title)}</a></h3>']
+    title = marked(f'<a href="{escape(link)}">{escape(story.title)}</a>', story_reading_minutes(entry))
+    parts = [f"<h3>{rank}. {title}</h3>"]
     if preview.image:
         parts.append(f'<p><img src="{escape(preview.image)}" alt=""></p>')
     text = excerpt((preview.description or story.text).split(PARAGRAPH)[0], DIGEST_LIMIT)
@@ -162,11 +171,9 @@ def digest_entry_html(rank: int, entry: Entry) -> str:
         lead = f"<b>{escape(source)}</b>" + (" · " if text else "") if source else ""
         parts.append(f"<p>{lead}{escape(text)}</p>")
     comments = plural(story.comments, "comment")
-    minutes = story_reading_time(entry)
     parts.append(
         f'<p>{plural(story.points, "point")} · <a href="{escape(story.comments_url)}">{comments}</a>'
         + (f" · by {escape(story.author)}" if story.author else "")
-        + (f" · {minutes}" if minutes else "")
         + "</p>"
     )
     return "\n".join(parts)
@@ -203,7 +210,7 @@ def render_feed(feed: Feed, items: list[tuple[Entry, int]], feed_url: str, now: 
     for entry, first_seen in items:
         story = entry.story
         item = ET.SubElement(channel, "item")
-        ET.SubElement(item, "title").text = story.title
+        ET.SubElement(item, "title").text = marked(story.title, story_reading_minutes(entry))
         ET.SubElement(item, "link").text = story.url or story.comments_url
         ET.SubElement(item, "description").text = item_html(entry, int(now.timestamp()))
         ET.SubElement(item, "comments").text = story.comments_url
@@ -221,28 +228,23 @@ def render_feed(feed: Feed, items: list[tuple[Entry, int]], feed_url: str, now: 
 
 
 def rss_item_html(entry: RssEntry) -> str:
-    """An RSS item's body: the image (the source's, else the page's), the excerpt, then the article's site and facts.
+    """An RSS item's body: the image (the source's, else the page's), the excerpt, then its points on HN.
 
-    The last line links to the article, labelled with its site, with its
-    reading time and its points on HN. The item's <link> already leads there,
-    and readers show the start of the body as an item's preview text, so the
-    line shows only when it adds a fact, follows an excerpt too long to fit in
-    that preview, or is all the body has.
+    The title links to the article and shows its reading time, so the body
+    links to it, labelled with its site, only when it would otherwise be
+    empty.
     """
     parts = []
     if entry.image:
         parts.append(f'<p><img src="{escape(entry.image)}" alt=""></p>')
-    text = entry.excerpt
-    if text:
+    if text := entry.excerpt:
         parts.append(paragraphs(text))
-    facts = [reading_time(entry.words, entry.preview)]
     if entry.hn_points:
-        facts.append(plural(entry.hn_points, "point") + " on Hacker News")
-    known = [f for f in facts if f]
+        parts.append(f"<p>{plural(entry.hn_points, 'point')} on Hacker News</p>")
     link = entry.item.link
-    if link and (known or not text or len(text) > PREVIEW_TEXT):
+    if link and not parts:
         site = (entry.preview.site_name if entry.preview else None) or domain(link) or link
-        parts.append("<p>" + " · ".join([f'<a href="{escape(link)}">{escape(site)}</a>', *known]) + "</p>")
+        parts.append(f'<p><a href="{escape(link)}">{escape(site)}</a></p>')
     return "\n".join(parts)
 
 
@@ -263,7 +265,7 @@ def render_rss_feed(feed: Rss, entries: list[RssEntry], feed_url: str, now: dt.d
     for entry in entries:
         source = entry.item
         item = ET.SubElement(channel, "item")
-        ET.SubElement(item, "title").text = source.title
+        ET.SubElement(item, "title").text = marked(source.title, reading_minutes(entry.words, entry.preview))
         if source.link:
             ET.SubElement(item, "link").text = source.link
         ET.SubElement(item, "description").text = rss_item_html(entry)

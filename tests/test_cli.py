@@ -8,6 +8,7 @@ import pytest
 from conftest import FakeResponse, hit
 
 from feed_refinery import cli
+from feed_refinery.kv import Published
 from feed_refinery.source import API, FIREBASE
 
 PAGE = "https://site.example/"
@@ -606,6 +607,7 @@ def kv_env(monkeypatch):
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "acct")
     monkeypatch.setenv("CLOUDFLARE_KV_NAMESPACE", "ns1")
     monkeypatch.setenv("CLOUDFLARE_KV_TOKEN", "t")
+    monkeypatch.delenv("CLOUDFLARE_ANALYTICS_TOKEN", raising=False)
 
 
 def test_kv_get_copies_a_key_or_says_it_is_missing(tmp_path, web, kv_env, capsys):
@@ -640,7 +642,54 @@ def test_kv_publish_prints_counts(tmp_path, web, kv_env, capsys):
     web.routes[f"{KV_BASE}/values/"] = lambda: FakeResponse(b'{"success": true}', "application/json")
     del web.routes[f"{KV_BASE}/values/health.json"]
     assert cli.main(["kv-publish", str(out), "--config", str(config)]) == 0
-    assert capsys.readouterr().out == "kv: 4 written, 0 unchanged, 0 deleted; 4 of 1000 writes today\n"
+    out_text = capsys.readouterr().out
+    assert (
+        out_text == "kv: 4 written, 0 unchanged, 0 deferred, 0 deleted; 4 of 1000 this build's writes today, mode all\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("published", "code", "lines"),
+    [
+        (
+            Published(7, 10, 0, 0, 118, 240, "all", "account"),
+            0,
+            ["kv: 7 written, 10 unchanged, 0 deferred, 0 deleted; 240 of 1000 account writes today, mode all"],
+        ),
+        (
+            Published(5, 10, 3, 0, 300, 790, "items", "account"),
+            0,
+            ["kv: 5 written, 10 unchanged, 3 deferred, 0 deleted; 790 of 1000 account writes today, mode items",
+             "::warning::KV budget tight: 3 changed feeds left for a later run"],
+        ),
+        (
+            Published(2, 10, 4, 0, 300, 830, "frozen", "estimate", "KV analytics: HTTP 500"),
+            0,
+            ["kv: 2 written, 10 unchanged, 4 deferred, 0 deleted; 830 of 1000 estimated account writes today, mode frozen",
+             "::warning::KV analytics: HTTP 500: the budget counts this build's writes and the others' last rate",
+             "::warning::KV budget spent: no feed written, only the state, until 00:00 UTC"],
+        ),
+        (
+            Published(0, 10, 4, 0, 300, 860, "none", "account"),
+            0,
+            ["kv: 0 written, 10 unchanged, 4 deferred, 0 deleted; 860 of 1000 account writes today, mode none",
+             "::warning::KV budget spent: nothing written until 00:00 UTC"],
+        ),
+        (
+            Published(2, 10, 0, 0, 300, 1000, "all", "account", quota=True),
+            1,
+            ["kv: 2 written, 10 unchanged, 0 deferred, 0 deleted; 1000 of 1000 account writes today, mode all"],
+        ),
+    ],
+)  # fmt: skip
+def test_kv_publish_says_how_the_budget_went(tmp_path, monkeypatch, kv_env, capsys, published, code, lines):
+    config = tmp_path / "feeds.toml"
+    config.write_text(CONFIG)
+    monkeypatch.setattr(cli.kv, "publish", lambda *args: published)
+    assert cli.main(["kv-publish", str(tmp_path), "--config", str(config)]) == code
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == lines
+    assert ("daily write limit reached" in captured.err) == published.quota
 
 
 def test_kv_publish_without_credentials_fails(tmp_path, monkeypatch, capsys):

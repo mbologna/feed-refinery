@@ -14,18 +14,18 @@ It's an engine: it builds whatever feeds a `feeds.toml` lists, and [`examples/fe
 
 Each item of an HN feed has:
 
-- the title, linking to the article (Ask HN and other text posts link to the thread);
+- the title, linking to the article (Ask HN and other text posts link to the thread), after dots for its reading time: `●○○` up to 3 minutes, `●●○` up to 7, `●●●` longer, none when it's unknown. Dots, not a red-to-green light: a long article isn't one to skip;
 - the page's `og:image` (falling back to `twitter:image`, then to the first `<img>` in its `<article>` or `<main>` that isn't declared smaller than 200 pixels), also as `media:thumbnail` for list views;
-- the page's excerpt: its opening paragraphs (inside `<article>` or `<main>` when it has one, from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 2,000 characters;
+- the page's excerpt: its opening paragraphs (inside the first `<article>` or `<main>` that has any, when it has one: a later one holds related stories, teasers or comments; from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 2,000 characters;
 - the submitter's own text, for Show HN and other posts that have some, quoted below the page's description (or in its place);
 - the top comment, as HN ranks it, cut to about 2,000 characters, with a link to it;
-- a last line with the article's link, labelled with its site name (or domain), its reading time, a link to the HN thread with the comment count, the points, and the story's age and author, as `Example · 8 min read · 37 comments · 150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
+- a last line with the article's link, labelled with its site name (or domain), a link to the HN thread with the comment count, the points, and the story's age and author, as `Example · 37 comments · 150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
 - `<comments>` set to the HN thread, as in hnrss;
 - `<category>` tags with the post kind (Show HN, Ask HN, Launch HN, Tell HN) and the linked domain, for reader filters and rules.
 
 Each feed carries an icon (`<image>`), so readers show one next to its name.
 
-The reading time counts the words of the article's paragraphs at 230 a minute, or of the post's own text for Ask HN and other text posts. It's left out under 200 words (usually a page its scripts fill in, or a short question) and for a page that says it's paywalled, where only the lede is there to count. Pages read before word counting began are read again, at most 100 a build, so older items get one too; a page that fails then keeps its preview without one.
+The reading time counts the words of the article's paragraphs at 230 a minute, or of the post's own text for Ask HN and other text posts. It's left out under 200 words (usually a page its scripts fill in, or a short question) and for a page that says it's paywalled, where only the lede is there to count. Pages read before word counting began, or before the count stopped at the first `<article>` or `<main>`, are read again, at most 100 a build, so older items get a right one too; a page that fails then keeps its preview without one.
 
 The counts are a snapshot from when the item was built. A page that blocks bots (`403`), times out or isn't HTML gets an item without the image and excerpt.
 
@@ -40,13 +40,13 @@ An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categ
 
 Excerpts, here and in HN items, keep their paragraphs. One that's too long ends with its last whole paragraph or sentence when that keeps at least half of it, else at a word, with an ellipsis.
 
-A last line links to the article, labelled with its site name (or domain), with its reading time and its points on HN when known. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`), else from the article page, as for HN items; a description alone says nothing of the article's length. Readers build an item's preview text from the start of its description, and the item's own link already leads to the article, so the line is left out after an excerpt of up to 500 characters when it has nothing to add. An item with no excerpt always gets it, so its description isn't empty.
+The title shows the reading time as dots, as in HN items. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`), else from the article page, as for HN items; a description alone says nothing of the article's length. A last line gives the story's points on HN, when known. The title already links to the article, so the body links to it, labelled with its site name (or domain), only when it would otherwise be empty.
 
 The article page is fetched once per item, as for HN stories, unless the source has the image, more than a teaser (500 characters of text) and the whole article, which gives the reading time: in practice, for every item of a source without full content. Without `enrich`, only items with full content get a reading time. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
 
 ## Reading in NetNewsWire
 
-NetNewsWire, and Feedly when it syncs it, takes an item's body from its description and shows its first 300 characters, as plain text, in the timeline. Items start with the excerpt, so those characters are the article's opening; the site, reading time and counts come last. The image doubles as `media:content` and `media:thumbnail`, which give the timeline its thumbnail and Feedly its visual, and the article view doesn't repeat it.
+NetNewsWire, and Feedly when it syncs it, takes an item's body from its description and shows its first 300 characters, as plain text, in the timeline. Items start with the excerpt, so those characters are the article's opening; the counts come last, and the reading time is in the title. The image doubles as `media:content` and `media:thumbnail`, which give the timeline its thumbnail and Feedly its visual, and the article view doesn't repeat it.
 
 ## Feeds
 
@@ -64,7 +64,7 @@ A `feeds.toml` lists the feeds; [`examples/feeds.toml`](examples/feeds.toml) has
 - `site`: the website the feed is about (default `https://news.ycombinator.com/`). It is the channel's `<link>`, which Feedly takes a feed's icon from, so each feed shows its source's icon rather than one shared by every feed here.
 - `icon`: the channel's `<image>`, for readers that show it (default the site's `/favicon.ico`).
 
-Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its image, the first paragraph of its excerpt (up to about 500 characters), its counts and reading time:
+Each `[[digest]]` table publishes one item per UTC day, listing that day's top stories by points, each with its reading time as dots before its title, its image, the first paragraph of its excerpt (up to about 500 characters) and its counts:
 
 - `file`, `title`: as for a feed.
 - `top`: stories per day (default 20).
@@ -207,7 +207,9 @@ A build:
 6. Fetches every RSS source with a conditional GET (`If-None-Match`, `If-Modified-Since`), a 30-second timeout and one retry after a network error; a source that two feeds share is fetched once. A `304` keeps what the source listed before, unless the feed's filters changed since the last build: then every source is fetched in full, so the items the feed holds are judged again. It reads the feed with [feedparser](https://github.com/kurtmckee/feedparser), filters and merges the items, then fetches the previews they lack, with the same retry rules as step 4.
 7. Writes each feed, `state.json` and `health.json`, then publishes them to KV.
 
-**Publishing to KV** writes only what changed. The free plan allows 1,000 writes a day (reset at 00:00 UTC), and each key's metadata holds the hash of its document without `lastBuildDate`, so one list request tells which feeds changed. The HN feeds change on every build (their items show points, comments and age), the RSS feeds only when their items do, and `state.json` and `health.json` are written every time: about 370 writes a day for 15 feeds. A feed no longer in `feeds.toml` is deleted from KV. `health.json` counts the day's writes under `kv`; past 900, a feed is written only when an item came or went, `kv.guard` is true, and `/health` reports it.
+**Publishing to KV** writes only what changed. Each key's metadata holds the hash of its document without `lastBuildDate`, so one list request tells which feeds changed. The HN feeds change on every build (their items show points, comments and age), the RSS feeds only when their items do, and `state.json` and `health.json` are written every time: about 330 writes a day for 17 feeds. A feed no longer in `feeds.toml` is deleted from KV.
+
+The free plan allows 1,000 writes a day (reset at 00:00 UTC) for the whole account, shared with any other Worker that writes to KV, so each run spends within a budget. It takes the account's writes so far (from the GraphQL Analytics API, with `CLOUDFLARE_ANALYTICS_TOKEN`) and sets aside the other writers' writes until midnight, at the rate they wrote so far, two writes for every later run, and a margin of 50. Within what's left it writes every changed feed while that's no more than this run's share of the day's rest (`mode` `all`). Past that it writes the feeds with a new item first, then refreshes that only change counts within the share (`items`). With no room for feeds it writes only `state.json` and `health.json` (`frozen`), and with not even that, nothing (`none`). A feed not written keeps serving its last version. A write refused for the daily limit stops the run, which fails. `health.json` records the account's writes, the other writers' rate and the mode under `kv`. `kv.guard` is true outside `all`, and `/health` reports it. Without the analytics token the budget counts only the build's own writes, which is right for a namespace in an account of its own.
 
 `health.json` is for outside monitoring: the build time (`built`, Unix seconds) and, per feed, its item count and how many items have an image and an excerpt. Each RSS feed, under `rss`, also has `last_ok` (Unix seconds), the oldest of its sources' last good fetches, `sources_failed`, the sources that failed in this build, and `ok`, false while any source last answered more than 3 hours ago. When fewer than 30% of a feed's items have an image, the build also leaves a warning (counted, in a quiet build) on the run's summary page: a sign the runner is being blocked or the page parser broke.
 
@@ -249,7 +251,7 @@ Give cron the full path to `uvx` if its `PATH` does not include it. `feed-refine
 As this repository runs it, for free: the list in a private repository, the build in a public one's Actions (free minutes), the feeds in Workers KV behind a Worker that checks a token.
 
 - **The list:** a private repository with `feeds.toml` and a workflow that runs `feed-refinery check-config` on every change. The build reads it with a read-only deploy key: its private half is the secret `FEEDS_CONFIG_DEPLOY_KEY` here.
-- **KV:** a namespace, and a Cloudflare API token that can only edit Workers KV. Here they're the repository variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_KV_NAMESPACE` and the secret `CLOUDFLARE_KV_TOKEN`; `feed-refinery kv-get` and `feed-refinery kv-publish` read the same names from the environment.
+- **KV:** a namespace, and a Cloudflare API token that can only edit Workers KV. Here they're the repository variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_KV_NAMESPACE` and the secret `CLOUDFLARE_KV_TOKEN`; `feed-refinery kv-get` and `feed-refinery kv-publish` read the same names from the environment. When other Workers in the account write to KV too, add the secret `CLOUDFLARE_ANALYTICS_TOKEN`, a token that can only read the account's analytics, so the write budget counts their writes.
 - **The build:** `feed-refinery kv-get state.json previous.json`, then `feed-refinery build --quiet --config config/feeds.toml --previous-state previous.json`, then `feed-refinery kv-publish public --config config/feeds.toml`.
 - **Serving:** a Worker bound to the namespace serves `<file>.xml` with a token check, and computes `/health` from `health.json`. This one is in [mbologna/infra](https://codeberg.org/mbologna/infra) (`terraform/dns-michelebologna.net/feeds-worker.js`).
 

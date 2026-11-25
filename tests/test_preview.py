@@ -140,6 +140,21 @@ def test_words_count_the_articles_paragraphs():
     assert parse_preview('<meta name="description" content="D">', "https://example.com/").words == 0  # counted
 
 
+def test_later_articles_are_teasers_not_the_article():
+    # A news site's recommended stories: after the article, a card for each, each an <article>.
+    card = f"<article><a href='/other'><h2>Other</h2><p>{LONG} (a teaser)</p></a></article>"
+    html = f"<body><main><article><p>{LONG} (the article)</p></article></main><div>{card * 3}</div></body>"
+    preview = parse_preview(html, "https://example.com/")
+    assert preview.description == f"{LONG} (the article)"
+    assert preview.words == len(LONG.split()) + 2
+
+
+def test_a_first_article_without_paragraphs_is_passed_over():
+    html = f"<body><article><p>A card.</p></article><article><p>{LONG}</p></article></body>"
+    preview = parse_preview(html, "https://example.com/")
+    assert (preview.description, preview.words) == (LONG, len(LONG.split()))
+
+
 def test_a_longer_opening_beats_the_meta_description():
     html = f'<head><meta name="description" content="Meta"></head><body><article><p>{LONG}</p></article></body>'
     assert parse_preview(html, "https://example.com/").description == LONG
