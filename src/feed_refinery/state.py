@@ -31,9 +31,10 @@ from .source import Story
 # the previews' words; a version 3 file loads with them unknown. 5 reads the
 # previews again: their excerpts and words took in the related-article cards
 # after a page's article, so a version 4 file loads with the previews' words
-# unknown, which fetches each page again, a few a build.
-VERSION = 5
-READABLE = (1, 2, 3, 4, 5)
+# unknown, which fetches each page again, a few a build. 6 added the stories'
+# words; a version 5 file loads with them unknown.
+VERSION = 6
+READABLE = (1, 2, 3, 4, 5, 6)
 MAX_ATTEMPTS = 3  # preview fetches per story before giving up on it
 COMMENT_INTERVAL = 2 * 3600  # how often a listed story's top comment is looked up again
 RETRY_STATUSES = {408, 429}  # client errors worth another try; other 4xx won't change

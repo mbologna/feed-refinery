@@ -63,10 +63,15 @@ def test_parse_hits_fills_defaults_and_skips_untitled_hits():
     ask = stories[0]
     assert ask.url is None
     assert (ask.points, ask.comments) == (0, 0)
-    assert ask.text == "Ask & tell\n\nmore"
+    assert (ask.text, ask.words) == ("Ask & tell\n\nmore", 4)
     assert ask.comments_url == "https://news.ycombinator.com/item?id=1"
     assert stories[1].url == "https://example.com/3"
-    assert stories[1].text == ""
+    assert (stories[1].text, stories[1].words) == ("", None)
+
+
+def test_parse_hits_counts_the_words_of_the_whole_text_its_excerpt_cuts():
+    (story,) = parse_hits({"hits": [hit(1, url=None, story_text="<p>" + "word " * 1000 + "</p>")]})
+    assert len(story.text.split()) < 1000 and story.words == 1000
 
 
 def test_fetch_stories(web):
