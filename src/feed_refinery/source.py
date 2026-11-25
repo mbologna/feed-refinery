@@ -30,6 +30,7 @@ class Story:
     created: int  # Unix time
     author: str
     text: str  # the submitter's own text (Ask HN, Show HN and the like), as a plain-text excerpt, paragraphs kept
+    words: int | None = None  # in the whole of that text, which the excerpt may cut; None when there's none
 
     @property
     def comments_url(self) -> str:
@@ -105,6 +106,7 @@ def parse_hits(data: dict) -> list[Story]:
         title = (hit.get("title") or "").strip()
         if not title or not hit.get("objectID") or "job" in (hit.get("_tags") or []):
             continue
+        text = plain_paragraphs(hit.get("story_text") or "")
         stories.append(
             Story(
                 id=str(hit["objectID"]),
@@ -114,7 +116,8 @@ def parse_hits(data: dict) -> list[Story]:
                 comments=hit.get("num_comments") or 0,
                 created=hit.get("created_at_i") or 0,
                 author=hit.get("author") or "",
-                text=excerpt(plain_paragraphs(hit.get("story_text") or "")),
+                text=excerpt(text),
+                words=len(text.split()) or None,
             )
         )
     return stories
