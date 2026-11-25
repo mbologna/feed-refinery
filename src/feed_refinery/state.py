@@ -32,9 +32,11 @@ from .source import Story
 # previews again: their excerpts and words took in the related-article cards
 # after a page's article, so a version 4 file loads with the previews' words
 # unknown, which fetches each page again, a few a build. 6 added the stories'
-# words; a version 5 file loads with them unknown.
-VERSION = 6
-READABLE = (1, 2, 3, 4, 5, 6)
+# words; a version 5 file loads with them unknown. 7 tries a failed recount
+# again, as it does a failed first fetch, so a version 6 file loads with the
+# previews' words of 0, which a failed recount left, unknown.
+VERSION = 7
+READABLE = (1, 2, 3, 4, 5, 6, 7)
 MAX_ATTEMPTS = 3  # preview fetches per story before giving up on it
 COMMENT_INTERVAL = 2 * 3600  # how often a listed story's top comment is looked up again
 RETRY_STATUSES = {408, 429}  # client errors worth another try; other 4xx won't change
@@ -196,7 +198,7 @@ def _preview(data: dict | None, version: int) -> Preview | None:
     if data is None:
         return None
     preview = Preview(**data)
-    return replace(preview, words=None) if version < 5 else preview  # see VERSION
+    return replace(preview, words=None) if version < 5 or (version < 7 and preview.words == 0) else preview
 
 
 def _rss_feed(data: dict, version: int) -> RssFeed:
@@ -397,14 +399,14 @@ def _fetch_all(todo: dict[str, list], fetch, workers: int) -> tuple[int, list[tu
                     isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500 and e.code not in RETRY_STATUSES
                 )
                 for entry in entries:
-                    if entry.preview is not None:  # a recount: keep the preview, and don't try again
+                    entry.attempts = MAX_ATTEMPTS if permanent else entry.attempts + 1
+                    if entry.preview is not None and entry.attempts >= MAX_ATTEMPTS:
+                        # A recount that keeps failing: keep the preview, counted as having no words.
                         entry.preview = replace(entry.preview, words=0)
-                    else:
-                        entry.attempts = MAX_ATTEMPTS if permanent else entry.attempts + 1
                 failed.append((url, f"{type(e).__name__}: {e}"))
                 continue
             for entry in entries:
-                entry.preview = result
+                entry.preview, entry.attempts = result, 0
             fetched += 1
     return fetched, failed
 

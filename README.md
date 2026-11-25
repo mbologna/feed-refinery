@@ -26,7 +26,7 @@ Each item of an HN feed has:
 
 Each feed carries an icon (`<image>`), so readers show one next to its name.
 
-The reading time counts the words of the article's paragraphs at 230 a minute, or of the whole of the post's own text for Ask HN and other text posts. It's left out when the excerpt shown holds at least 90% of those words, as it's then the whole post less its captions and bylines; under 200 words (usually a page its scripts fill in); and for a page that says it's paywalled, where only the lede is there to count. Pages read before word counting began, or before the count stopped at the first `<article>` or `<main>`, are read again, at most 100 a build, so older items get a right one too; a page that fails then keeps its preview without one.
+The reading time counts the words of the article's paragraphs at 230 a minute, or of the whole of the post's own text for Ask HN and other text posts. It's left out when the excerpt shown holds at least 90% of those words, as it's then the whole post less its captions and bylines; under 200 words (usually a page its scripts fill in); and for a page that says it's paywalled, where only the lede is there to count. Pages read before word counting began, or before the count stopped at the first `<article>` or `<main>`, are read again, at most 100 a build, so older items get a right one too; a page that fails is tried again on the next builds, as a first fetch is, and after 3 failures (or at once for a permanent error such as `404`) keeps its preview without one.
 
 The counts are a snapshot from when the item was built. A page that blocks bots (`403`), times out or isn't HTML gets an item without the image and excerpt.
 
