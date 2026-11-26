@@ -251,18 +251,23 @@ def rss_item_html(entry: RssEntry) -> str:
 
     Laid out as an HN item: the reading time follows the excerpt, next to the
     link labelled with its site, and is left out when the excerpt is the whole
-    post.
+    post. A full_text feed's item shows the article its page holds instead of
+    the excerpt, and no reading time.
     """
     parts = []
-    if entry.image:
+    content = entry.preview.content if entry.preview else None
+    if entry.image and not (content and escape(entry.image) in content):
         parts.append(f'<p><img src="{escape(entry.image)}" alt=""></p>')
-    if text := excerpt(entry.excerpt or "", SHOWN_LIMIT):
+    text = "" if content else excerpt(entry.excerpt or "", SHOWN_LIMIT)
+    if content:
+        parts.append(content)
+    elif text:
         parts.append(paragraphs(text))
     article = []
     if link := entry.item.link:
         site = (entry.preview.site_name if entry.preview else None) or domain(link) or link
         article.append(f'<a href="{escape(link)}">{escape(site)}</a>')
-    if minutes := minutes_read(reading_minutes(entry.words, entry.preview, text)):
+    if not content and (minutes := minutes_read(reading_minutes(entry.words, entry.preview, text))):
         article.append(minutes)
     if article:
         parts.append("<p>" + " · ".join(article) + "</p>")
@@ -282,7 +287,9 @@ def distinct(categories: tuple[str, ...]) -> list[str]:
 def render_rss_feed(feed: Rss, entries: list[RssEntry], feed_url: str, now: dt.datetime) -> bytes:
     """An RSS feed's document, entries newest first. Items keep the source's title, link, guid, date and categories."""
     description = f"{feed.title}, from {', '.join(feed.sources)}"
-    if feed.enrich:
+    if feed.full_text:
+        description += ", with each article's image and full text"
+    elif feed.enrich:
         description += ", with each article's image and excerpt"
     rss, channel = _channel(feed, description, feed_url, now)
     for entry in entries:

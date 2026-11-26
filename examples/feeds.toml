@@ -104,6 +104,8 @@ top = 15
 #   exclude_on_hacker_news  hide items whose link was a story in the [[feed]]
 #                       feeds: on the front page, or with at least the lowest
 #                       min_points of the [[feed]] tables (default false)
+#   full_text           fetch every article's page and show the whole article
+#                       instead of the excerpt; needs enrich (default false)
 #   max_items           the most items the feed holds (default 100)
 #   keep_days           how long an item no source lists any more stays
 #                       (default 7)

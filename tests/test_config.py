@@ -342,3 +342,14 @@ def test_site_and_icon_defaults_and_overrides():
 def test_bad_site_or_icon_fails_with_a_message(text, message):
     with pytest.raises(ConfigError, match=message):
         parse(text)
+
+
+def test_rss_full_text_flag():
+    (feed,) = parse(RSS + 'source = "https://a.example/"\nfull_text = true\n').rss
+    assert feed.full_text and feed.enrich
+    (plain,) = parse(RSS + 'source = "https://a.example/"\n').rss
+    assert not plain.full_text
+    with pytest.raises(ConfigError, match="full_text needs enrich"):
+        parse(RSS + 'source = "https://a.example/"\nfull_text = true\nenrich = false\n')
+    with pytest.raises(ConfigError, match="full_text must be true or false"):
+        parse(RSS + 'source = "https://a.example/"\nfull_text = "yes"\n')

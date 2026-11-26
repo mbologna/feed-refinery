@@ -940,3 +940,47 @@ def test_a_story_one_source_drops_and_another_keeps_stays():
     state = State.from_json(state.to_json())
     update_rss(state, [feed], {"r.xml": {A: ok(item(1, categories=["Bits"])), B: ok(item(1), item(2))}}, NOW + HOUR)
     assert set(state.rss["r.xml"].items) == {"https://news.example/1", "https://news.example/2"}
+
+
+FULL = replace(NEWS, full_text=True)
+
+
+def test_full_text_feeds_read_every_page_for_its_article():
+    complete = RssEntry(item(1, image="https://i.example/1.png", summary="Text. " * TEASER, words=900), NOW)
+    unread = RssEntry(item(2), NOW, Preview(words=900))  # fetched before the feed asked for full text
+    read = RssEntry(item(3), NOW, Preview(content=""))
+    given_up = RssEntry(item(4), NOW, Preview(words=900), attempts=3)
+    no_link = RssEntry(item(5, link=None, guid="n5"), NOW)
+    state = rss_state(complete, unread, read, given_up, no_link)
+    asked = []
+
+    def fetch(url, full_text=False):
+        asked.append((url, full_text))
+        return Preview(content="<p>A.</p>")
+
+    assert fetch_rss_previews(state, [FULL], fetch) == (2, [])
+    assert sorted(asked) == [("https://news.example/1", True), ("https://news.example/2", True)]
+    assert complete.preview.content == unread.preview.content == "<p>A.</p>"
+    assert read.preview == Preview(content="") and given_up.preview.content is None
+    assert no_link.preview == Preview()
+
+
+def test_full_text_and_plain_feeds_fetch_their_own_way():
+    state = rss_state(RssEntry(item(1), NOW))
+    state.rss["full.xml"] = rss_state(RssEntry(item(1), NOW), file="full.xml").rss["full.xml"]
+    asked = []
+
+    def fetch(url, full_text=False):
+        asked.append(full_text)
+        return Preview()
+
+    assert fetch_rss_previews(state, [NEWS, replace(FULL, file="full.xml")], fetch) == (2, [])
+    assert sorted(asked) == [False, True]
+
+
+def test_version_7_previews_load_with_their_content_unknown():
+    entry = RssEntry(item(1), NOW, Preview(description="D", content="<p>A.</p>"))
+    current = rss_state(entry).to_json()
+    assert State.from_json(current).rss["news.xml"].items["https://news.example/1"].preview.content == "<p>A.</p>"
+    old = current.replace(f'"version":{VERSION}'.encode(), b'"version":7').replace(b',"content":"<p>A.</p>"', b"")
+    assert State.from_json(old).rss["news.xml"].items["https://news.example/1"].preview == Preview(description="D")

@@ -119,6 +119,12 @@ const FIELDS = {
       type: "flag",
       default: false,
     },
+    {
+      key: "full_text",
+      label: "Show each article's full text, copied from its page (fetched when the feed builds, not in this preview)",
+      type: "flag",
+      default: false,
+    },
     { key: "max_items", label: "Most items", type: "number", default: 100 },
     { key: "keep_days", label: "Days an item stays once no source lists it", type: "number", default: 7 },
     {
