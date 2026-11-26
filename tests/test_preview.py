@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -220,3 +221,103 @@ def test_paywalled_from_json_ld(html, expected):
 def test_json_ld_is_never_a_description():
     preview = parse_preview(ld('{"description": "' + "y" * 120 + '"}'), "https://news.example/a")
     assert preview.description == "x" * 100
+
+
+ARTICLE = """<html><head><style>p { color: red }</style></head><body>
+<nav><p>A navigation paragraph long enough to be counted as one, but not the article's.</p></nav>
+<main><article>
+<header><h1>Title</h1><button>Follow</button></header>
+<p class="lede" style="x" onclick="evil()">The article's opening paragraph, long enough to start it, with
+<a href="/more" onclick="evil()">a <em>relative</em> link</a>, <a href="javascript:evil()">a script link</a>
+and <span>a span</span>.</p>
+<img src="/wide.jpg" width="1200"><img src="/wide.jpg" width="1200"><img src="/icon.png" width="16">
+<h2>Picks <svg><title>icon</title></svg></h2>
+<ul><li><strong>One</strong>.<br>The first pick.</li><li>The second pick.<button>Share</button></li></ul>
+<p>An unclosed paragraph<blockquote><p>A quote.</p></blockquote>
+<p> </p><script>evil()</script><aside><p>A newsletter box inside the article, long enough to be counted.</p></aside>
+</article></main></body></html>"""
+
+
+def test_full_text_copies_the_article_with_its_safe_tags_only():
+    p = parse_preview(ARTICLE, "https://example.com/post", full_text=True)
+    assert p.content == (
+        "<p>The article's opening paragraph, long enough to start it, with "
+        '<a href="https://example.com/more">a <em>relative</em> link</a>, a script link and a span.</p>'
+        '<p><img src="https://example.com/wide.jpg" alt=""></p>'
+        "<h2>Picks </h2>"
+        "<ul><li><strong>One</strong>.<br>The first pick.</li><li>The second pick.</li></ul>"
+        "<p>An unclosed paragraph</p><blockquote><p>A quote.</p></blockquote>"
+    )
+    assert parse_preview(ARTICLE, "https://example.com/post").content is None  # only asked for
+
+
+def test_full_text_needs_an_article_or_main_with_paragraphs():
+    page = "<body><p>A paragraph long enough to be the opening of a page with no article element at all.</p></body>"
+    assert parse_preview(page, "https://example.com/", full_text=True).content == ""
+
+
+OPENING = "<p>A paragraph long enough to be an article's opening one, which takes 80 characters or more.</p>"
+
+
+def test_full_text_starts_with_the_article_holding_paragraphs():
+    page = f"<body><article><p>Short card.</p></article><article>{OPENING}</article></body>"
+    assert parse_preview(page, "https://example.com/", full_text=True).content == OPENING
+
+
+def article_ld(body):
+    return f'<script type="application/ld+json">{json.dumps({"@type": "NewsArticle", "articleBody": body})}</script>'
+
+
+def test_full_text_keeps_only_the_blocks_the_article_body_holds():
+    opening = "Hi, friends! Welcome to the newsletter, your guide to the <em>best</em> stuff in the world."
+    middle = "The picks of the week follow, and every one of them is worth a look this weekend."
+    body = (
+        "Hi, friends! Welcome to the newsletter, your guide to the best stuff in the world.\n"
+        "Picks\n"
+        "* One. The first pick.\n"
+        "* Two. The second&nbsp;pick.\n"
+        "The picks of the week follow, and every one of them is worth a look this weekend.\n"
+        "See you next week!\n"
+        "8"
+    )
+    page = (
+        f"<head>{article_ld(body)}</head><body><article>"
+        "<p>A standfirst that the article body leaves out, long enough to be counted.</p>"
+        "<p>Picks</p>"  # short and before the first long block it holds: the article's own heading
+        f"<p>{opening}</p><h2>Picks</h2>"
+        "<ul><li>One. The first pick.</li><li>Two. The second pick.</li></ul>"
+        '<p>An ad between the blocks.</p><p><img src="https://i.example/a.jpg"></p>'
+        f"<p>{middle}</p><p>See you next week!</p>"
+        '<p><img src="https://i.example/related.jpg"></p><p>8</p><h2>Top Stories</h2>'
+        "</article></body>"
+    )
+    assert parse_preview(page, "https://example.com/", full_text=True).content == (
+        f"<p>Picks</p><p>{opening}</p><h2>Picks</h2>"
+        "<ul><li>One. The first pick.</li><li>Two. The second pick.</li></ul>"
+        '<p><img src="https://i.example/a.jpg" alt=""></p>'
+        f"<p>{middle}</p><p>See you next week!</p>"
+    )
+
+
+def test_full_text_keeps_everything_when_no_block_is_in_the_article_body():
+    page = f"<head>{article_ld('Something else entirely.')}</head><body><article>{OPENING}</article></body>"
+    assert parse_preview(page, "https://example.com/", full_text=True).content == OPENING
+
+
+def test_full_text_keeps_preformatted_whitespace():
+    page = f"<article>{OPENING}<pre>a  b\n c</pre></article>"
+    assert parse_preview(page, "https://example.com/", full_text=True).content.endswith("<pre>a  b\n c</pre>")
+
+
+def test_fetch_with_full_text_reads_more_of_the_page(web):
+    filler = "<p>" + "x" * MAX_BYTES + "</p>"
+    tail = "<p>The article's paragraph, past the bytes a preview reads, long enough to be its opening.</p>"
+    web.html("https://example.com/long", f"<body>{filler}<article>{tail}</article></body>")
+    assert fetch_preview("https://example.com/long", full_text=True).content == tail
+    assert fetch_preview("https://example.com/long").content is None
+
+
+def test_fetch_with_full_text_marks_a_page_without_html_as_read(web):
+    web.html("https://example.com/paper.pdf", "%PDF-1.7", content_type="application/pdf")
+    assert fetch_preview("https://example.com/paper.pdf", full_text=True) == Preview(content="")
+    assert fetch_preview("file:///etc/passwd", full_text=True) == Preview(content="")

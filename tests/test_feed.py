@@ -525,3 +525,22 @@ def test_site_and_icon_can_be_set():
 )
 def test_reading_time_starts_with_dots_for_its_length(minutes, line):
     assert minutes_read(minutes) == line
+
+
+def test_rss_item_shows_the_full_text_instead_of_the_excerpt_and_reading_time():
+    content = '<p>Whole <a href="https://a.example/">article</a>.</p>'
+    entry = RssEntry(rss_item(words=920), 0, Preview(site_name="News Site", content=content, words=920))
+    assert rss_item_html(entry) == (
+        '<p><img src="https://static.example/chiara.png?w=680&amp;h=453" alt=""></p>\n'
+        f'{content}\n<p><a href="{LINK}">News Site</a></p>'
+    )
+    # The article's own copy of the image is enough.
+    pictured = '<p><img src="https://static.example/chiara.png?w=680&amp;h=453" alt=""></p><p>Text.</p>'
+    assert rss_item_html(RssEntry(rss_item(), 0, Preview(content=pictured))).startswith(pictured + "\n")
+    # A page with no article falls back to the excerpt.
+    assert "Non aveva mai parlato" in rss_item_html(RssEntry(rss_item(), 0, Preview(content="")))
+
+
+def test_full_text_feeds_say_so():
+    _, root = render_rss([], replace(NEWS_SAMPLE, full_text=True))
+    assert root.findtext("channel/description").endswith(", with each article's image and full text")

@@ -125,6 +125,8 @@ class Rss(_Site):
     exclude_paywalled: bool = False
     # Hide items whose link was a story of the [[feed]] tables (see state.check_hacker_news).
     exclude_on_hacker_news: bool = False
+    # Show each item's whole article, copied from its page (preview.Preview.content); needs enrich.
+    full_text: bool = False
     keep_days: int = 7  # how long an item no source lists any more stays
     json: JsonFields | None = None  # the sources are JSON documents, not RSS or Atom
     # (source URL, label) pairs: the label goes in front of the titles of that
@@ -219,7 +221,7 @@ def _parse_digest(where: str, table: dict, used: list[str]) -> Digest:
 RSS_KNOWN = {f.name for f in fields(Rss)} | {"source"}  # source: one URL, sources: several
 RSS_WORDS = ("include_categories", "exclude_categories", "include_sections", "exclude_sections", "exclude_authors")
 RSS_PATTERNS = ("include_titles", "exclude_titles", "include_links", "exclude_links", "exclude_text")
-RSS_FLAGS = ("enrich", "exclude_paywalled", "exclude_on_hacker_news")
+RSS_FLAGS = ("enrich", "exclude_paywalled", "exclude_on_hacker_news", "full_text")
 MAX_RSS_ITEMS = 1000
 MAX_KEEP_DAYS = 365
 
@@ -285,6 +287,8 @@ def _parse_rss(where: str, table: dict, used: list[str]) -> Rss:
             options[key] = table[key]
     if options.get("exclude_paywalled") and not options.get("enrich", True):
         raise ConfigError(f"{where}: exclude_paywalled needs enrich: the article pages say what's paywalled")
+    if options.get("full_text") and not options.get("enrich", True):
+        raise ConfigError(f"{where}: full_text needs enrich: the article comes from its page")
     for key, high in (("max_items", MAX_RSS_ITEMS), ("keep_days", MAX_KEEP_DAYS)):
         if key in table:
             value = table[key]

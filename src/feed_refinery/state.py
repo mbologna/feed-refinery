@@ -15,6 +15,7 @@ import urllib.request
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field, replace
+from functools import partial
 from itertools import islice
 from pathlib import Path
 
@@ -34,9 +35,11 @@ from .source import Story
 # unknown, which fetches each page again, a few a build. 6 added the stories'
 # words; a version 5 file loads with them unknown. 7 tries a failed recount
 # again, as it does a failed first fetch, so a version 6 file loads with the
-# previews' words of 0, which a failed recount left, unknown.
-VERSION = 7
-READABLE = (1, 2, 3, 4, 5, 6, 7)
+# previews' words of 0, which a failed recount left, unknown. 8 added the
+# previews' content; a version 7 file loads with it unknown, which reads the
+# pages of the full_text feeds' items again.
+VERSION = 8
+READABLE = (1, 2, 3, 4, 5, 6, 7, 8)
 MAX_ATTEMPTS = 3  # preview fetches per story before giving up on it
 COMMENT_INTERVAL = 2 * 3600  # how often a listed story's top comment is looked up again
 RETRY_STATUSES = {408, 429}  # client errors worth another try; other 4xx won't change
@@ -446,27 +449,39 @@ def fetch_rss_previews(
     teaser and the whole article, whose words give the reading time: content
     longer than its excerpt, as content the excerpt holds may be a teaser. With
     exclude_paywalled every item's page is fetched: it says whether the item
-    is paywalled.
+    is paywalled. With full_text too, with fetch(url, full_text=True), and an
+    item whose preview has no content yet is read again.
     """
     todo: dict[str, list[RssEntry]] = {}
     recount: dict[str, list[RssEntry]] = {}
+    full: dict[str, list[RssEntry]] = {}
+    full_recount: dict[str, list[RssEntry]] = {}
     for feed in feeds:
         if not feed.enrich:
             continue
+        wanted, again = (full, full_recount) if feed.full_text else (todo, recount)
         for entry in state.rss.get(feed.file, RssFeed()).items.values():
             item, link = entry.item, entry.item.link
             if entry.preview is not None:
-                if link and entry.preview.words is None and not item.has_article:
-                    recount.setdefault(link, []).append(entry)
+                if feed.full_text:
+                    stale = entry.preview.content is None and entry.attempts < MAX_ATTEMPTS
+                else:
+                    stale = entry.preview.words is None and not item.has_article
+                if link and stale:
+                    again.setdefault(link, []).append(entry)
                 continue
             if entry.attempts >= MAX_ATTEMPTS:
                 continue
             complete = item.image and len(item.summary) >= TEASER and item.has_article
-            if link and (feed.exclude_paywalled or not complete):
-                todo.setdefault(link, []).append(entry)
+            if link and (feed.exclude_paywalled or feed.full_text or not complete):
+                wanted.setdefault(link, []).append(entry)
             else:
                 entry.preview = Preview()  # nothing to fetch, or nothing missing
-    return _fetch_all(_with_recounts(todo, recount), fetch, workers)
+    fetched, failed = _fetch_all(_with_recounts(todo, recount), fetch, workers)
+    if full or full_recount:
+        more, more_failed = _fetch_all(_with_recounts(full, full_recount), partial(fetch, full_text=True), workers)
+        fetched, failed = fetched + more, failed + more_failed
+    return fetched, failed
 
 
 def fetch_comments(
