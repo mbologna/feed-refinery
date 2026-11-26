@@ -402,31 +402,32 @@ def test_rss_items_drop_categories_that_differ_only_in_case():
 
 
 def test_rss_item_html():
-    # No link to the article: the item's <link> is one, and readers would show it in the preview text.
+    # Laid out as an HN item: the excerpt, then the article's link labelled with its site.
     assert rss_item_html(RssEntry(rss_item(summary="Uno <b>due</b> & tre"), 0)) == (
         '<p><img src="https://static.example/chiara.png?w=680&amp;h=453" alt=""></p>\n'
-        "<p>Uno &lt;b&gt;due&lt;/b&gt; &amp; tre</p>"
+        "<p>Uno &lt;b&gt;due&lt;/b&gt; &amp; tre</p>\n"
+        f'<p><a href="{LINK}">newssite.example</a></p>'
     )
 
 
 def test_rss_item_keeps_the_excerpts_paragraphs():
     html = rss_item_html(RssEntry(rss_item(summary="Uno.\n\nDue & tre.", image=None), 0))
-    assert html == "<p>Uno.</p>\n<p>Due &amp; tre.</p>"
+    assert html.startswith("<p>Uno.</p>\n<p>Due &amp; tre.</p>\n")
 
 
-def test_rss_item_ends_with_its_reading_time_and_points_on_hn_and_never_links_the_article_again():
+def test_rss_item_ends_with_its_site_and_reading_time_then_its_points_on_hn():
     with_points = RssEntry(rss_item(words=920), 0, Preview(site_name="News Site"), hn_points=312)
-    assert rss_item_html(with_points).endswith("</p>\n<p>●●○ 4 min read · 312 points on Hacker News</p>")
-    assert rss_item_html(RssEntry(rss_item(words=920), 0)).endswith("</p>\n<p>●●○ 4 min read</p>")
-    long = RssEntry(rss_item(summary="Parola " * 80, image=None), 0)
-    assert "<a " not in rss_item_html(with_points) + rss_item_html(long)  # the title links to it
+    assert rss_item_html(with_points).endswith(
+        f'</p>\n<p><a href="{LINK}">News Site</a> · ●●○ 4 min read</p>\n<p>312 points on Hacker News</p>'
+    )
+    assert rss_item_html(RssEntry(rss_item(words=920), 0)).endswith("newssite.example</a> · ●●○ 4 min read</p>")
 
 
 def test_rss_items_keep_their_title_and_show_the_reading_time_after_the_excerpt():
     _, root = render_rss([RssEntry(rss_item(guid="g2"), 0, Preview(words=4000))])
     item = root.find("channel/item")
     assert item.findtext("title") == "Cosa dice il film del “pandorogate” & <altro>"
-    assert item.findtext("description").endswith("responsabilità</p>\n<p>●●● 17 min read</p>")
+    assert item.findtext("description").endswith("newssite.example</a> · ●●● 17 min read</p>")
 
 
 def test_rss_items_have_no_reading_time_when_the_excerpt_is_the_whole_post():

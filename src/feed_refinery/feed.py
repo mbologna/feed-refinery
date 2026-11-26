@@ -246,27 +246,28 @@ def render_feed(feed: Feed, items: list[tuple[Entry, int]], feed_url: str, now: 
 
 
 def rss_item_html(entry: RssEntry) -> str:
-    """An RSS item's body: the image (the source's, else the page's), the excerpt cut to SHOWN_LIMIT, then its reading
-    time and HN points.
+    """An RSS item's body: the image (the source's, else the page's), the excerpt cut to SHOWN_LIMIT, the article's
+    link and reading time, then its points on HN.
 
-    The reading time follows the excerpt, and is left out when that's the whole
-    post. The title links to the article, so the last line links to it,
-    labelled with its site, only when the item has neither image nor excerpt.
+    Laid out as an HN item: the reading time follows the excerpt, next to the
+    link labelled with its site, and is left out when the excerpt is the whole
+    post.
     """
     parts = []
     if entry.image:
         parts.append(f'<p><img src="{escape(entry.image)}" alt=""></p>')
     if text := excerpt(entry.excerpt or "", SHOWN_LIMIT):
         parts.append(paragraphs(text))
-    facts = [minutes_read(reading_minutes(entry.words, entry.preview, text))]
-    if entry.hn_points:
-        facts.append(f"{plural(entry.hn_points, 'point')} on Hacker News")
-    link = entry.item.link
-    if link and not parts:
+    article = []
+    if link := entry.item.link:
         site = (entry.preview.site_name if entry.preview else None) or domain(link) or link
-        facts.insert(0, f'<a href="{escape(link)}">{escape(site)}</a>')
-    if known := [f for f in facts if f]:
-        parts.append("<p>" + " · ".join(known) + "</p>")
+        article.append(f'<a href="{escape(link)}">{escape(site)}</a>')
+    if minutes := minutes_read(reading_minutes(entry.words, entry.preview, text)):
+        article.append(minutes)
+    if article:
+        parts.append("<p>" + " · ".join(article) + "</p>")
+    if entry.hn_points:
+        parts.append(f"<p>{plural(entry.hn_points, 'point')} on Hacker News</p>")
     return "\n".join(parts)
 
 
