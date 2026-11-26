@@ -41,6 +41,10 @@ HOT = 4 * 3600  # hackernewsbot's 🔥: at most 4 hours old
 COLD = 2 * 86400  # and its ❄️: at least 2 days old
 WORDS_PER_MINUTE = 230
 READING_MIN = 200  # words: fewer usually means a page its scripts fill in, or only the lede
+# Before the reading time, how long the read is at a glance: up to 3 minutes,
+# up to 7, longer. Dots, not a colour: a long article isn't one to skip.
+LENGTHS = ((3, "●○○"), (7, "●●○"))
+LONG_READ = "●●●"
 SHOWN_LIMIT = 800  # characters of an excerpt an item shows: enough to judge it by, not a chunk of the article
 COMMENT_LIMIT = 300  # characters of the top comment an item shows
 DIGEST_LIMIT = 500  # characters of each story's text in a digest, a list to scan
@@ -83,8 +87,11 @@ def story_reading_minutes(entry: Entry, shown: str) -> int | None:
 
 
 def minutes_read(minutes: int | None) -> str | None:
-    """The reading time in words, as "8 min read"."""
-    return f"{minutes} min read" if minutes else None
+    """The reading time in words after its dots, as "●●○ 6 min read"."""
+    if not minutes:
+        return None
+    dots = next((d for limit, d in LENGTHS if minutes <= limit), LONG_READ)
+    return f"{dots} {minutes} min read"
 
 
 def item_html(entry: Entry, now: int) -> str:

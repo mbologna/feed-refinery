@@ -16,6 +16,7 @@ from feed_refinery.feed import (
     domain,
     item_html,
     last_build_date,
+    minutes_read,
     reading_minutes,
     render_digest,
     render_feed,
@@ -220,7 +221,7 @@ def test_an_items_reading_time_follows_its_excerpt_and_not_its_title():
     assert item.findtext("title") == 'Rust & "C" <compared>'
     html = item.findtext("description")
     assert html.startswith(  # the excerpt, what readers show in a list; then whether, and where, to read on
-        '<p>Text</p>\n<p><a href="https://www.example.com/post?a=1&amp;b=2">Example</a> · 10 min read</p>\n<p>💬'
+        '<p>Text</p>\n<p><a href="https://www.example.com/post?a=1&amp;b=2">Example</a> · ●●● 10 min read</p>\n<p>💬'
     )
     assert html.endswith(
         '<p><a href="https://news.ycombinator.com/item?id=42">37 comments</a> · 150 points · 1 day ago by pg</p>'
@@ -257,7 +258,7 @@ def test_items_show_about_800_characters_of_the_excerpt_and_300_of_the_comment()
 def test_a_text_posts_reading_time_is_its_whole_texts():
     cut = story(url=None, text="word " * 330, words=2300)  # Story.text is an excerpt; words count all of it
     html = item_html(Entry(cut, Preview()), CREATED)
-    assert "<p>10 min read</p>" in html
+    assert "<p>●●● 10 min read</p>" in html
     assert "min read" not in item_html(Entry(story(url=None, text="ab " * 250, words=250), Preview()), CREATED)
     assert "min read" not in item_html(Entry(story(url=None, text="Short question?"), Preview()), CREATED)
     # From a version 5 state, without a count: the excerpt's words, here all of them.
@@ -269,13 +270,13 @@ def test_digest_entries_show_the_reading_time_after_their_excerpt():
     doc = render_digest(Digest("d.xml", "D"), [(dt.date(2026, 11, 18), [entry])], "u", NOW)
     html = ET.fromstring(doc).find("channel/item").findtext("description")
     assert '<h3>1. <a href="https://www.example.com/post?a=1&amp;b=2">Rust &amp; ' in html
-    assert "<p>10 min read · 150 points · <a " in html
+    assert "<p>●●● 10 min read · 150 points · <a " in html
     # Whole in its item, but the digest shows only its first paragraph.
     first, rest = "ab " * 130, "cd " * 130
     entry = Entry(story(), Preview(description=f"{first}\n\n{rest}", words=280))
     assert "min read" not in item_html(entry, CREATED)
     doc = render_digest(Digest("d.xml", "D"), [(dt.date(2026, 11, 18), [entry])], "u", NOW)
-    assert "<p>1 min read · 150 points · " in ET.fromstring(doc).find("channel/item").findtext("description")
+    assert "<p>●○○ 1 min read · 150 points · " in ET.fromstring(doc).find("channel/item").findtext("description")
 
 
 def test_categories_and_channel_image():
@@ -415,8 +416,8 @@ def test_rss_item_keeps_the_excerpts_paragraphs():
 
 def test_rss_item_ends_with_its_reading_time_and_points_on_hn_and_never_links_the_article_again():
     with_points = RssEntry(rss_item(words=920), 0, Preview(site_name="News Site"), hn_points=312)
-    assert rss_item_html(with_points).endswith("</p>\n<p>4 min read · 312 points on Hacker News</p>")
-    assert rss_item_html(RssEntry(rss_item(words=920), 0)).endswith("</p>\n<p>4 min read</p>")
+    assert rss_item_html(with_points).endswith("</p>\n<p>●●○ 4 min read · 312 points on Hacker News</p>")
+    assert rss_item_html(RssEntry(rss_item(words=920), 0)).endswith("</p>\n<p>●●○ 4 min read</p>")
     long = RssEntry(rss_item(summary="Parola " * 80, image=None), 0)
     assert "<a " not in rss_item_html(with_points) + rss_item_html(long)  # the title links to it
 
@@ -425,7 +426,7 @@ def test_rss_items_keep_their_title_and_show_the_reading_time_after_the_excerpt(
     _, root = render_rss([RssEntry(rss_item(guid="g2"), 0, Preview(words=4000))])
     item = root.find("channel/item")
     assert item.findtext("title") == "Cosa dice il film del “pandorogate” & <altro>"
-    assert item.findtext("description").endswith("responsabilità</p>\n<p>17 min read</p>")
+    assert item.findtext("description").endswith("responsabilità</p>\n<p>●●● 17 min read</p>")
 
 
 def test_rss_items_have_no_reading_time_when_the_excerpt_is_the_whole_post():
@@ -439,7 +440,7 @@ def test_rss_item_without_text_links_to_the_article():
         rss_item_html(RssEntry(rss_item(summary="", image=None), 0)) == f'<p><a href="{LINK}">newssite.example</a></p>'
     )
     with_words = RssEntry(rss_item(summary="", image=None, words=920), 0)
-    assert rss_item_html(with_words) == f'<p><a href="{LINK}">newssite.example</a> · 4 min read</p>'
+    assert rss_item_html(with_words) == f'<p><a href="{LINK}">newssite.example</a> · ●●○ 4 min read</p>'
 
 
 def test_rss_items_fall_back_on_the_preview():
@@ -508,3 +509,18 @@ def test_site_and_icon_can_be_set():
     assert channel.findtext("image/url") == "https://www.example.org/assets/img/favicon.png"
     digest = ET.fromstring(render_digest(Digest("d.xml", "D", site="https://links.example.org/"), [], "u", NOW))
     assert digest.findtext("channel/image/url") == "https://links.example.org/favicon.ico"
+
+
+@pytest.mark.parametrize(
+    ("minutes", "line"),
+    [
+        (None, None),
+        (1, "●○○ 1 min read"),
+        (3, "●○○ 3 min read"),
+        (4, "●●○ 4 min read"),
+        (7, "●●○ 7 min read"),
+        (8, "●●● 8 min read"),
+    ],
+)
+def test_reading_time_starts_with_dots_for_its_length(minutes, line):
+    assert minutes_read(minutes) == line

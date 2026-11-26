@@ -18,7 +18,7 @@ Each item of an HN feed has:
 - the page's `og:image` (falling back to `twitter:image`, then to the first `<img>` in its `<article>` or `<main>` that isn't declared smaller than 200 pixels), also as `media:thumbnail` for list views;
 - the page's excerpt: its opening paragraphs (inside the first `<article>` or `<main>` that has any, when it has one: a later one holds related stories, teasers or comments; from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 800 characters: enough to judge the article by;
 - the submitter's own text, for Show HN and other posts that have some, quoted below the page's description (or in its place);
-- the article's link, labelled with its site name (or domain), and its reading time, as `Example · 9 min read`: after the excerpt, where one decides whether to read on. A text post gets the reading time alone, when its text is longer than the excerpt;
+- the article's link, labelled with its site name (or domain), and its reading time, as `Example · ●●● 9 min read`: after the excerpt, where one decides whether to read on. The dots tell the length at a glance: `●○○` up to 3 minutes, `●●○` up to 7, `●●●` longer; dots rather than a red-to-green light, which would mark a long article as one to skip. A text post gets the reading time alone, when its text is longer than the excerpt;
 - the top comment, as HN ranks it, cut to about 300 characters, with a link to it;
 - a last line with a link to the HN thread with the comment count, the points, and the story's age and author, as `37 comments · 150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
 - `<comments>` set to the HN thread, as in hnrss;
