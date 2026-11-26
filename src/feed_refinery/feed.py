@@ -41,6 +41,8 @@ HOT = 4 * 3600  # hackernewsbot's 🔥: at most 4 hours old
 COLD = 2 * 86400  # and its ❄️: at least 2 days old
 WORDS_PER_MINUTE = 230
 READING_MIN = 200  # words: fewer usually means a page its scripts fill in, or only the lede
+SHOWN_LIMIT = 800  # characters of an excerpt an item shows: enough to judge it by, not a chunk of the article
+COMMENT_LIMIT = 300  # characters of the top comment an item shows
 DIGEST_LIMIT = 500  # characters of each story's text in a digest, a list to scan
 
 
@@ -89,29 +91,32 @@ def item_html(entry: Entry, now: int) -> str:
     """The item body: image, excerpt, the submitter's text, the article's link and reading time, the top comment,
     then counts and age.
 
-    The body starts with the text, which readers show of an item in a list.
-    The reading time follows it, where one decides whether to read on, next to
-    the link that does; it's left out when the excerpt is the whole post.
+    The body starts with the text, which readers show of an item in a list,
+    cut to SHOWN_LIMIT. The reading time follows it, where one decides whether
+    to read on, next to the link that does; it's left out when the excerpt is
+    the whole post.
     """
     story, preview = entry.story, entry.preview or Preview()
+    description, text = excerpt(preview.description or "", SHOWN_LIMIT), excerpt(story.text, SHOWN_LIMIT)
     parts = []
     if preview.image:
         parts.append(f'<p><img src="{escape(preview.image)}" alt=""></p>')
-    if preview.description:
-        parts.append(paragraphs(preview.description))
-        if story.text:  # Show HN and the like: the page and the submitter's own words
-            parts.append(f"<blockquote>{paragraphs(story.text)}</blockquote>")
-    elif story.text:
-        parts.append(paragraphs(story.text))
+    if description:
+        parts.append(paragraphs(description))
+        if text:  # Show HN and the like: the page and the submitter's own words
+            parts.append(f"<blockquote>{paragraphs(text)}</blockquote>")
+    elif text:
+        parts.append(paragraphs(text))
     source = preview.site_name or domain(story.url) or "Article"
     article = [f'<a href="{escape(story.url)}">{escape(source)}</a>'] if story.url else []
-    if minutes := minutes_read(story_reading_minutes(entry, (preview.description or "") if story.url else story.text)):
+    if minutes := minutes_read(story_reading_minutes(entry, description if story.url else text)):
         article.append(minutes)
     if article:
         parts.append("<p>" + " · ".join(article) + "</p>")
     if entry.comment:
         c = entry.comment
-        parts.append(paragraphs(c.text, f"💬 <b>{escape(c.author)}</b>: ", f' <a href="{escape(c.url)}">→</a>'))
+        lead, tail = f"💬 <b>{escape(c.author)}</b>: ", f' <a href="{escape(c.url)}">→</a>'
+        parts.append(paragraphs(excerpt(c.text, COMMENT_LIMIT), lead, tail))
     stats = [f'<a href="{escape(story.comments_url)}">{plural(story.comments, "comment")}</a>']
     stats.append(plural(story.points, "point"))
     age = age_line(story.created, now)
@@ -234,7 +239,8 @@ def render_feed(feed: Feed, items: list[tuple[Entry, int]], feed_url: str, now: 
 
 
 def rss_item_html(entry: RssEntry) -> str:
-    """An RSS item's body: the image (the source's, else the page's), the excerpt, then its reading time and HN points.
+    """An RSS item's body: the image (the source's, else the page's), the excerpt cut to SHOWN_LIMIT, then its reading
+    time and HN points.
 
     The reading time follows the excerpt, and is left out when that's the whole
     post. The title links to the article, so the last line links to it,
@@ -243,9 +249,9 @@ def rss_item_html(entry: RssEntry) -> str:
     parts = []
     if entry.image:
         parts.append(f'<p><img src="{escape(entry.image)}" alt=""></p>')
-    if text := entry.excerpt:
+    if text := excerpt(entry.excerpt or "", SHOWN_LIMIT):
         parts.append(paragraphs(text))
-    facts = [minutes_read(reading_minutes(entry.words, entry.preview, text or ""))]
+    facts = [minutes_read(reading_minutes(entry.words, entry.preview, text))]
     if entry.hn_points:
         facts.append(f"{plural(entry.hn_points, 'point')} on Hacker News")
     link = entry.item.link

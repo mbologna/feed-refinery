@@ -230,19 +230,38 @@ def test_an_items_reading_time_follows_its_excerpt_and_not_its_title():
 
 
 def test_no_reading_time_when_the_excerpt_is_the_whole_article():
-    whole = "word " * 280
-    assert "min read" not in item_html(Entry(story(), Preview(description=whole, words=300)), CREATED)
+    whole = "ab " * 260  # 780 characters: the item shows all of it
+    assert "min read" not in item_html(Entry(story(), Preview(description=whole, words=280)), CREATED)
     assert "2 min read" in item_html(Entry(story(), Preview(description=whole, words=400)), CREATED)
+    # The stored excerpt may hold most of the post, but the item shows only SHOWN_LIMIT of it.
+    long = "word " * 280
+    assert "1 min read" in item_html(Entry(story(), Preview(description=long, words=300)), CREATED)
+
+
+def test_items_show_about_800_characters_of_the_excerpt_and_300_of_the_comment():
+    sentence = "A sentence of about fifty characters, more or less. "
+    entry = Entry(
+        story(text=sentence * 30), Preview(description=sentence * 40), comment=Comment("7", "bob", sentence * 20)
+    )
+    html = item_html(entry, CREATED)
+    description = html.split("</p>")[0].removeprefix("<p>")
+    text = html.split("<blockquote><p>")[1].split("</p>")[0]
+    comment = html.split("💬 <b>bob</b>: ")[1].split(" <a ")[0]
+    assert 400 <= len(description) <= 800 and description.endswith("less.")  # at a sentence
+    assert 400 <= len(text) <= 800
+    assert 150 <= len(comment) <= 300
+    rss = rss_item_html(RssEntry(rss_item(summary=sentence * 40, image=None), 0))
+    assert 400 <= len(rss.split("</p>")[0].removeprefix("<p>")) <= 800
 
 
 def test_a_text_posts_reading_time_is_its_whole_texts():
     cut = story(url=None, text="word " * 330, words=2300)  # Story.text is an excerpt; words count all of it
     html = item_html(Entry(cut, Preview()), CREATED)
     assert "<p>10 min read</p>" in html
-    assert "min read" not in item_html(Entry(story(url=None, text="word " * 460, words=460), Preview()), CREATED)
+    assert "min read" not in item_html(Entry(story(url=None, text="ab " * 250, words=250), Preview()), CREATED)
     assert "min read" not in item_html(Entry(story(url=None, text="Short question?"), Preview()), CREATED)
     # From a version 5 state, without a count: the excerpt's words, here all of them.
-    assert "min read" not in item_html(Entry(story(url=None, text="word " * 460), Preview()), CREATED)
+    assert "min read" not in item_html(Entry(story(url=None, text="ab " * 250), Preview()), CREATED)
 
 
 def test_digest_entries_show_the_reading_time_after_their_excerpt():
@@ -252,8 +271,8 @@ def test_digest_entries_show_the_reading_time_after_their_excerpt():
     assert '<h3>1. <a href="https://www.example.com/post?a=1&amp;b=2">Rust &amp; ' in html
     assert "<p>10 min read · 150 points · <a " in html
     # Whole in its item, but the digest shows only its first paragraph.
-    first, rest = "word " * 80, "more " * 200
-    entry = Entry(story(), Preview(description=f"{first}\n\n{rest}", words=290))
+    first, rest = "ab " * 130, "cd " * 130
+    entry = Entry(story(), Preview(description=f"{first}\n\n{rest}", words=280))
     assert "min read" not in item_html(entry, CREATED)
     doc = render_digest(Digest("d.xml", "D"), [(dt.date(2026, 11, 18), [entry])], "u", NOW)
     assert "<p>1 min read · 150 points · " in ET.fromstring(doc).find("channel/item").findtext("description")
@@ -410,9 +429,9 @@ def test_rss_items_keep_their_title_and_show_the_reading_time_after_the_excerpt(
 
 
 def test_rss_items_have_no_reading_time_when_the_excerpt_is_the_whole_post():
-    whole = RssEntry(rss_item(summary="parola " * 250, words=260), 0)
+    whole = RssEntry(rss_item(summary="ab " * 250, words=260), 0)
     assert "min read" not in rss_item_html(whole)
-    assert "2 min read" in rss_item_html(RssEntry(rss_item(summary="parola " * 250, words=400), 0))
+    assert "2 min read" in rss_item_html(RssEntry(rss_item(summary="ab " * 250, words=400), 0))
 
 
 def test_rss_item_without_text_links_to_the_article():
