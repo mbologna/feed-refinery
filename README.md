@@ -16,10 +16,10 @@ Each item of an HN feed has:
 
 - the title, linking to the article (Ask HN and other text posts link to the thread);
 - the page's `og:image` (falling back to `twitter:image`, then to the first `<img>` in its `<article>` or `<main>` that isn't declared smaller than 200 pixels), also as `media:thumbnail` for list views;
-- the page's excerpt: its opening paragraphs (inside the first `<article>` or `<main>` that has any, when it has one: a later one holds related stories, teasers or comments; from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 2,000 characters;
+- the page's excerpt: its opening paragraphs (inside the first `<article>` or `<main>` that has any, when it has one: a later one holds related stories, teasers or comments; from the first of at least 80 characters, without captions), or its description when that's longer, cut to about 800 characters: enough to judge the article by;
 - the submitter's own text, for Show HN and other posts that have some, quoted below the page's description (or in its place);
-- the article's link, labelled with its site name (or domain), and its reading time, as `Example · 9 min read`: after the excerpt, where one decides whether to read on. A text post gets the reading time alone, when its text is longer than the excerpt;
-- the top comment, as HN ranks it, cut to about 2,000 characters, with a link to it;
+- the article's link, labelled with its site name (or domain), and its reading time, as `Example · ●●● 9 min read`: after the excerpt, where one decides whether to read on. The dots tell the length at a glance: `●○○` up to 3 minutes, `●●○` up to 7, `●●●` longer; dots rather than a red-to-green light, which would mark a long article as one to skip. A text post gets the reading time alone, when its text is longer than the excerpt;
+- the top comment, as HN ranks it, cut to about 300 characters, with a link to it;
 - a last line with a link to the HN thread with the comment count, the points, and the story's age and author, as `37 comments · 150 points · 🔥 2 hours ago by pg`. As in the Telegram bot, 🔥 marks a story at most 4 hours old and ❄️ one at least 2 days old;
 - `<comments>` set to the HN thread, as in hnrss;
 - `<category>` tags with the post kind (Show HN, Ask HN, Launch HN, Tell HN) and the linked domain, for reader filters and rules.
@@ -37,11 +37,11 @@ Job posts ("Acme (YC S13) Is Hiring") are ads and never become items.
 An item of an RSS feed keeps the source's title, link, guid, `pubDate` and categories, and the author as `dc:creator`. Its description has:
 
 - the image: the source's (an image enclosure, `media:content`, the first `<img>` in its description, then in its full content, that isn't declared smaller than 100 pixels, or `media:thumbnail`, in that order: thumbnails are often small crops), else the article page's, as for HN items, also as `media:thumbnail`;
-- the excerpt: the source's text as plain text, which is its full content (`content:encoded`, Atom `<content>`) when that's longer than its description, or the page's excerpt, whichever is longer, cut to about 2,000 characters.
+- the excerpt: the source's text as plain text, which is its full content (`content:encoded`, Atom `<content>`) when that's longer than its description, or the page's excerpt, whichever is longer, cut to about 800 characters.
 
-Excerpts, here and in HN items, keep their paragraphs. One that's too long ends with its last whole paragraph or sentence when that keeps at least half of it, else at a word, with an ellipsis.
+Excerpts, here and in HN items, keep their paragraphs. The build keeps about 2,000 characters of each, which tells a teaser from the whole article, and an item shows the first 800 or so. One that's too long ends with its last whole paragraph or sentence when that keeps at least half of it, else at a word, with an ellipsis.
 
-A line after the excerpt gives the reading time and the story's points on HN, when known. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`) when that's longer than its excerpt, else from the article page, as for HN items: content the excerpt holds may be the teaser again, which some sources repeat there, so the larger count wins; a description alone says nothing of the article's length. As in HN items, it's left out when the excerpt is the whole post. The title already links to the article, so that line links to it, labelled with its site name (or domain), only when the item has neither image nor excerpt.
+As in HN items, a line after the excerpt links to the article, labelled with its site name (or domain), with its reading time, as `Example · ●●○ 6 min read`; the story's points on HN, when known, follow on a line of their own. The reading time comes from the source's full content (`content:encoded`, Atom `<content>`) when that's longer than its excerpt, else from the article page, as for HN items: content the excerpt holds may be the teaser again, which some sources repeat there, so the larger count wins; a description alone says nothing of the article's length. As in HN items, it's left out when the excerpt is the whole post.
 
 The article page is fetched once per item, as for HN stories, unless the source has the image, more than a teaser (500 characters of text) and the whole article (full content longer than its excerpt), which gives the reading time: in practice, for every item of a source without full content. Without `enrich`, only items with full content get a reading time. With `exclude_paywalled` every item's page is fetched, as it says whether the item is free.
 
